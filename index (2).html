@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mousetrap setup</title>
+<style>
+  :root{
+    --bg:#f6f5f2; --panel:#fff; --ink:#1a1a1a; --dim:#6b6b6b; --line:#e2e0da;
+    --accent:#c2410c; --ok:#15803d; --warn:#b45309; --bad:#b91c1c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
+      --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
+    --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:0 16px 64px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  header{padding:32px 0 20px;border-bottom:1px solid var(--line);margin-bottom:24px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--dim);font-size:14px;margin:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 16px;font-weight:600}
+  button{
+    font:inherit;font-weight:500;padding:9px 16px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  }
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--dim)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.on{background:var(--ok)}
+  .hide{display:none !important}
+  /* live */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:620px){.grid{grid-template-columns:1fr}}
+  .pad{position:relative;aspect-ratio:1;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
+  .pad::before,.pad::after{content:"";position:absolute;background:var(--line)}
+  .pad::before{left:0;right:0;top:50%;height:1px}
+  .pad::after{top:0;bottom:0;left:50%;width:1px}
+  .dz{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:1px dashed var(--line);border-radius:50%}
+  .cursor{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);
+          transform:translate(-50%,-50%);transition:left .05s linear,top .05s linear}
+  .meter{margin-bottom:14px}
+  .meter label{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:4px}
+  .meter label b{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  .bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+  .bar i{position:absolute;top:0;bottom:0;background:var(--accent);display:block}
+  .bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
+  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;
+        border:1px solid var(--line);color:var(--dim)}
+  .pill.on{background:var(--ok);border-color:var(--ok);color:#fff}
+  /* steps */
+  ol.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  ol.steps li{counter-increment:s;display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+  ol.steps li:last-child{border-bottom:0}
+  ol.steps li::before{
+    content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;
+    border:1px solid var(--line);display:grid;place-items:center;font-size:12px;color:var(--dim)
+  }
+  ol.steps li.done::before{content:"✓";background:var(--ok);border-color:var(--ok);color:#fff}
+  ol.steps li.now::before{background:var(--accent);border-color:var(--accent);color:#fff}
+  .stepbody{flex:1;min-width:0}
+  .stepbody .t{font-weight:500}
+  .stepbody .d{font-size:13px;color:var(--dim);margin-top:2px;font-family:var(--mono)}
+  .note{font-size:13px;color:var(--dim);margin:14px 0 0}
+  .result{padding:12px 14px;border-radius:8px;margin-top:16px;font-size:14px;border:1px solid}
+  .result.ok{border-color:var(--ok);color:var(--ok)}
+  .result.bad{border-color:var(--bad);color:var(--bad)}
+  /* settings */
+  .set{display:grid;grid-template-columns:130px 1fr 60px;gap:12px;align-items:center;margin-bottom:12px}
+  .set label{font-size:14px}
+  .set output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--dim)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:12px;
+      font-family:var(--mono);font-size:12px;overflow-x:auto;margin:0}
+  .warnbox{background:var(--panel);border:1px solid var(--warn);color:var(--warn);
+           border-radius:8px;padding:14px;font-size:14px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>mouse<span>trap</span> setup</h1>
+  <p class="sub">Calibrate and tune your device. Chrome or Edge required.</p>
+</header>
+
+<div id="unsupported" class="warnbox hide">
+  This browser doesn’t support WebHID. Open this page in Chrome or Edge — Safari and Firefox can’t talk to the device.
+</div>
+
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+    <div class="row">
+      <button id="connect" class="primary">Connect device</button>
+      <button id="disconnect" class="hide">Disconnect</button>
+    </div>
+  </div>
+</div>
+
+<div id="app" class="hide">
+
+  <div class="panel">
+    <h2>Live readings</h2>
+    <div class="grid">
+      <div>
+        <div class="pad" id="pad">
+          <div class="dz" id="dz"></div>
+          <div class="cursor" id="cur" style="left:50%;top:50%"></div>
+        </div>
+        <p class="note">Where the cursor would move. The dashed circle is the deadzone.</p>
+      </div>
+      <div>
+        <div class="meter">
+          <label>Magnet <b id="magV">0.00</b></label>
+          <div class="bar"><i id="magB" style="left:0;width:0"></i><u id="magOnM"></u><u id="magOffM"></u></div>
+        </div>
+        <div class="meter">
+          <label>Tilt X <b id="dxV">0.00</b></label>
+          <div class="bar"><i id="dxB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="meter">
+          <label>Tilt Y <b id="dyV">0.00</b></label>
+          <div class="bar"><i id="dyB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="row" style="margin-top:18px">
+          <span class="pill" id="pGrip">moving</span>
+          <span class="pill" id="pL">left</span>
+          <span class="pill" id="pR">right</span>
+          <span class="pill" id="pEnc" style="font-family:var(--mono)">enc 0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Calibration</h2>
+    <p class="note" style="margin:0 0 16px">
+      Sets up the handle for your unit. You only need this once per enclosure,
+      or after moving the magnet. The cursor stays still while it runs.
+    </p>
+    <ol class="steps" id="steps">
+      <li data-k="rest"><div class="stepbody"><div class="t">Rest — hands off the handle</div><div class="d" id="d-rest">not recorded</div></div></li>
+      <li data-k="0"><div class="stepbody"><div class="t">Push <b>up</b> and hold</div><div class="d" id="d-0">not recorded</div></div></li>
+      <li data-k="1"><div class="stepbody"><div class="t">Push <b>down</b> and hold</div><div class="d" id="d-1">not recorded</div></div></li>
+      <li data-k="2"><div class="stepbody"><div class="t">Push <b>left</b> and hold</div><div class="d" id="d-2">not recorded</div></div></li>
+      <li data-k="3"><div class="stepbody"><div class="t">Push <b>right</b> and hold</div><div class="d" id="d-3">not recorded</div></div></li>
+    </ol>
+    <div class="row" style="margin-top:18px">
+      <button id="calStart" class="primary">Start calibration</button>
+      <button id="calRec" class="hide">Record this step</button>
+      <button id="calCancel" class="hide">Cancel</button>
+    </div>
+    <div id="calMsg" class="result hide"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Feel</h2>
+    <div class="set"><label for="sSpeed">Speed</label><input type="range" id="sSpeed" min="5" max="60" step="1"><output id="oSpeed"></output></div>
+    <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
+    <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
+    <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
+    <div class="set"><label for="sTU">Trim up</label><input type="range" id="sTU" min="0.5" max="2" step="0.05"><output id="oTU"></output></div>
+    <div class="set"><label for="sTD">Trim down</label><input type="range" id="sTD" min="0.5" max="2" step="0.05"><output id="oTD"></output></div>
+    <div class="set"><label for="sTL">Trim left</label><input type="range" id="sTL" min="0.5" max="2" step="0.05"><output id="oTL"></output></div>
+    <div class="set"><label for="sTR">Trim right</label><input type="range" id="sTR" min="0.5" max="2" step="0.05"><output id="oTR"></output></div>
+    <div class="row" style="margin-top:16px">
+      <button id="save" class="primary">Save to device</button>
+      <button id="defaults">Reset to defaults</button>
+    </div>
+    <p class="note">Changes apply live. Save writes them to the device so they survive unplugging.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Diagnostics</h2>
+    <pre id="diag">—</pre>
+    <div class="row" style="margin-top:14px">
+      <button id="copy">Copy diagnostics</button>
+    </div>
+    <p class="note">If something isn’t working, copy this and send it over.</p>
+  </div>
+
+</div>
+</div>
+
+<script>
+"use strict";
+const RID = 2, USAGE_PAGE = 0xFF00;
+const C = { PING:0x01, STREAM:0x10, GET_SET:0x11, SET_SET:0x12, GET_CAL:0x13,
+            CAL_BEGIN:0x20, CAL_REST:0x21, CAL_DIR:0x22, CAL_COMPUTE:0x23,
+            CAL_ABORT:0x24, SAVE:0x30, DEFAULTS:0x31 };
+const R = { PONG:0x81, SETTINGS:0x91, CAL:0x93, REST:0xA1, DIR:0xA2, RESULT:0xA3, STATE:0x50 };
+const $ = id => document.getElementById(id);
+
+let device = null, settings = null, calInfo = null, waiters = [];
+
+if (!("hid" in navigator)) { $("unsupported").classList.remove("hide"); $("connect").disabled = true; }
+
+/* ---------- transport ---------- */
+function send(bytes){
+  if(!device) return Promise.resolve();
+  const buf = new Uint8Array(64);
+  buf.set(bytes.slice(0,64));
+  return device.sendReport(RID, buf).catch(e => log("send failed: "+e.message));
+}
+function cmd(op, payload = []){ return send([op, ...payload]); }
+function expect(code, ms = 4000){
+  return new Promise((res, rej) => {
+    const w = { code, res, t: setTimeout(() => {
+      waiters = waiters.filter(x => x !== w); rej(new Error("device did not reply"));
+    }, ms) };
+    waiters.push(w);
+  });
+}
+function f32(arr){ const b = new ArrayBuffer(4); new DataView(b).setFloat32(0, arr, true); return [...new Uint8Array(b)]; }
+function floats(dv, start, n){ const o = []; for(let i=0;i<n;i++) o.push(dv.getFloat32(start+i*4, true)); return o; }
+
+function onReport(e){
+  if(e.reportId !== RID) return;
+  const dv = e.data, code = dv.getUint8(0);
+  if(code === R.STATE){ renderState(dv); return; }
+  const w = waiters.find(x => x.code === code);
+  if(w){ clearTimeout(w.t); waiters = waiters.filter(x => x !== w); w.res(dv); }
+}
+
+/* ---------- connect ---------- */
+async function connect(){
+  let devs;
+  try{ devs = await navigator.hid.requestDevice({ filters:[{ usagePage: USAGE_PAGE }] }); }
+  catch(e){ return; }
+  if(!devs.length) return;
+  device = devs[0];
+  if(!device.opened) await device.open();
+  device.addEventListener("inputreport", onReport);
+  navigator.hid.addEventListener("disconnect", ev => { if(ev.device === device) teardown(); });
+
+  try{
+    await cmd(C.PING);
+    const dv = await expect(R.PONG);
+    const proto = dv.getUint8(1), fw = dv.getUint8(2), valid = dv.getUint8(3);
+    const tilt = dv.getFloat32(4, true);
+    calInfo = { proto, fw, valid: !!valid, tilt };
+    setStatus(true, `Connected — firmware v${fw}` + (valid ? "" : " · not calibrated yet"));
+  }catch(err){
+    setStatus(false, "Connected, but the device didn’t respond. Is the raw-HID firmware loaded?");
+    return;
+  }
+
+  await cmd(C.GET_SET);
+  const s = await expect(R.SETTINGS);
+  const v = floats(s, 1, 8);
+  settings = { speed:v[1], deadzone:v[0], trimUp:v[2], trimDown:v[3],
+               trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7] };
+  fillSettings();
+
+  await cmd(C.GET_CAL);
+  const c = await expect(R.CAL);
+  const cv = floats(c, 2, 11);
+  calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3],
+                  gUp:cv[4], gDown:cv[5], gLeft:cv[6], gRight:cv[7],
+                  magOn:cv[8], magOff:cv[9] };
+  placeMagMarkers();
+
+  $("app").classList.remove("hide");
+  $("connect").classList.add("hide");
+  $("disconnect").classList.remove("hide");
+  await cmd(C.STREAM, [1]);
+  updateDiag();
+}
+
+function teardown(){
+  device = null; $("app").classList.add("hide");
+  $("connect").classList.remove("hide"); $("disconnect").classList.add("hide");
+  setStatus(false, "Not connected");
+}
+async function disconnect(){
+  try{ await cmd(C.STREAM,[0]); await device.close(); }catch(e){}
+  teardown();
+}
+function setStatus(on, text){ $("dot").classList.toggle("on", on); $("statusText").textContent = text; }
+
+/* ---------- live ---------- */
+let last = null;
+function renderState(dv){
+  const flags = dv.getUint8(1);
+  const v = floats(dv, 2, 11);
+  const st = { grip:!!(flags&1), left:!!(flags&2), right:!!(flags&4), cal:!!(flags&8),
+               dX:v[0], dY:v[1], mag:v[2], sx:v[3], sy:v[4],
+               moveX:v[5], moveY:v[6], enc:v[7], aX:v[8], aY:v[9], aZ:v[10] };
+  last = st;
+
+  $("magV").textContent = st.mag.toFixed(2);
+  $("magB").style.width = Math.min(100, st.mag/20*100) + "%";
+  bar("dx", st.dX); bar("dy", st.dY);
+  $("dxV").textContent = st.dX.toFixed(2);
+  $("dyV").textContent = st.dY.toFixed(2);
+
+  const px = 50 + Math.max(-1,Math.min(1, st.sx)) * 45;
+  const py = 50 + Math.max(-1,Math.min(1, st.sy)) * 45;
+  $("cur").style.left = px + "%"; $("cur").style.top = py + "%";
+  $("cur").style.opacity = st.grip ? 1 : .3;
+
+  $("pGrip").classList.toggle("on", st.grip);
+  $("pL").classList.toggle("on", st.left);
+  $("pR").classList.toggle("on", st.right);
+  $("pEnc").textContent = "enc " + st.enc;
+}
+function bar(id, val){
+  const pct = Math.max(-1, Math.min(1, val/4)) * 50;
+  const el = $(id+"B");
+  if(pct >= 0){ el.style.left = "50%"; el.style.width = pct + "%"; }
+  else { el.style.left = (50+pct) + "%"; el.style.width = (-pct) + "%"; }
+}
+function placeMagMarkers(){
+  if(!calInfo?.cal) return;
+  $("magOnM").style.left = Math.min(100, calInfo.cal.magOn/20*100) + "%";
+  $("magOffM").style.left = Math.min(100, calInfo.cal.magOff/20*100) + "%";
+}
+function sizeDeadzone(){
+  const d = settings ? settings.deadzone : 0.35;
+  const pct = Math.min(90, d * 90);
+  $("dz").style.width = pct + "%"; $("dz").style.height = pct + "%";
+}
+
+/* ---------- calibration ---------- */
+const ORDER = ["rest","0","1","2","3"];
+let stepIdx = -1;
+
+function markStep(){
+  document.querySelectorAll("#steps li").forEach(li => {
+    const k = li.dataset.k, i = ORDER.indexOf(k);
+    li.classList.toggle("done", i < stepIdx);
+    li.classList.toggle("now", i === stepIdx);
+  });
+  if(stepIdx >= 0 && stepIdx < ORDER.length){
+    const k = ORDER[stepIdx];
+    $("calRec").textContent = k === "rest" ? "Record rest" : "Record — I’m holding it";
+  }
+}
+async function calStart(){
+  $("calMsg").classList.add("hide");
+  ORDER.forEach(k => $("d-"+k).textContent = "not recorded");
+  await cmd(C.CAL_BEGIN); await expect(R.RESULT);
+  stepIdx = 0; markStep();
+  $("calStart").classList.add("hide");
+  $("calRec").classList.remove("hide");
+  $("calCancel").classList.remove("hide");
+}
+async function calRecord(){
+  const k = ORDER[stepIdx];
+  $("calRec").disabled = true;
+  $("calRec").textContent = "Recording… keep holding";
+  try{
+    if(k === "rest"){
+      await cmd(C.CAL_REST);
+      const dv = await expect(R.REST, 8000);
+      const v = floats(dv, 2, 4);
+      $("d-rest").textContent = `magnet noise ${v[0].toFixed(2)}`;
+    } else {
+      await cmd(C.CAL_DIR, [parseInt(k)]);
+      const dv = await expect(R.DIR, 8000);
+      const v = floats(dv, 2, 4);
+      $("d-"+k).textContent = `tilt ${v[0].toFixed(2)}, ${v[1].toFixed(2)} · magnet ${v[2].toFixed(1)}–${v[3].toFixed(1)}`;
+    }
+  }catch(err){ showCal(false, err.message); resetCalUI(); return; }
+  $("calRec").disabled = false;
+  stepIdx++;
+  if(stepIdx >= ORDER.length) return calCompute();
+  markStep();
+}
+async function calCompute(){
+  $("calRec").classList.add("hide");
+  try{
+    await cmd(C.CAL_COMPUTE);
+    const dv = await expect(R.RESULT, 6000);
+    const err = dv.getUint8(1);
+    if(err){
+      const msgs = { 1:"A step is missing — run it again.",
+                     2:"The pushes were too small or too alike. Push further and hold steady.",
+                     3:"The four directions didn’t come out distinct. Make sure each push goes the way the step says.",
+                     4:"The magnet can’t tell a push from rest. The magnet may need to sit closer to the sensor." };
+      showCal(false, msgs[err] || ("Failed (code "+err+")"));
+    } else {
+      const v = floats(dv, 2, 5);
+      showCal(true, `Saved. Magnet margin ${v[4].toFixed(1)}×` +
+        (v[4] < 1.8 ? " — thin, but usable. Movement may feel hesitant on the weakest side." : " — good."));
+      await cmd(C.GET_CAL);
+      const c = await expect(R.CAL);
+      const cv = floats(c, 2, 11);
+      calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3], gUp:cv[4], gDown:cv[5],
+                      gLeft:cv[6], gRight:cv[7], magOn:cv[8], magOff:cv[9] };
+      calInfo.valid = true;
+      placeMagMarkers(); updateDiag();
+    }
+  }catch(err){ showCal(false, err.message); }
+  resetCalUI();
+}
+function showCal(ok, text){
+  const el = $("calMsg");
+  el.className = "result " + (ok ? "ok" : "bad");
+  el.textContent = text;
+}
+function resetCalUI(){
+  stepIdx = -1; markStep();
+  $("calStart").classList.remove("hide"); $("calStart").textContent = "Run calibration again";
+  $("calRec").classList.add("hide"); $("calRec").disabled = false;
+  $("calCancel").classList.add("hide");
+}
+async function calCancel(){ await cmd(C.CAL_ABORT); try{ await expect(R.RESULT); }catch(e){} resetCalUI(); }
+
+/* ---------- settings ---------- */
+const SLIDERS = [
+  ["sSpeed","oSpeed","speed", v=>v.toFixed(0)],
+  ["sDead","oDead","deadzone", v=>v.toFixed(2)],
+  ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
+  ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
+  ["sTU","oTU","trimUp", v=>v.toFixed(2)],
+  ["sTD","oTD","trimDown", v=>v.toFixed(2)],
+  ["sTL","oTL","trimLeft", v=>v.toFixed(2)],
+  ["sTR","oTR","trimRight", v=>v.toFixed(2)],
+];
+function fillSettings(){
+  SLIDERS.forEach(([s,o,key,fmt]) => {
+    $(s).value = settings[key];
+    $(o).textContent = fmt(settings[key]);
+  });
+  sizeDeadzone();
+}
+let pushTimer = null;
+function pushSettings(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    const p = [...f32(settings.deadzone), ...f32(settings.speed),
+               ...f32(settings.trimUp), ...f32(settings.trimDown),
+               ...f32(settings.trimLeft), ...f32(settings.trimRight),
+               ...f32(settings.scroll), ...f32(settings.quiet)];
+    await cmd(C.SET_SET, p);
+    try{ await expect(R.SETTINGS); }catch(e){}
+    updateDiag();
+  }, 120);
+}
+SLIDERS.forEach(([s,o,key,fmt]) => {
+  $(s).addEventListener("input", e => {
+    settings[key] = parseFloat(e.target.value);
+    $(o).textContent = fmt(settings[key]);
+    if(key === "deadzone") sizeDeadzone();
+    pushSettings();
+  });
+});
+
+/* ---------- diagnostics ---------- */
+function updateDiag(){
+  if(!calInfo) return;
+  const c = calInfo.cal || {};
+  const s = settings || {};
+  $("diag").textContent =
+`mousetrap diagnostics
+firmware v${calInfo.fw}  protocol v${calInfo.proto}  calibrated: ${calInfo.valid}
+
+rotation   XX ${n(c.XX)}  XY ${n(c.XY)}  YX ${n(c.YX)}  YY ${n(c.YY)}
+gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.gRight)}
+magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
+
+speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
+trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
+
+live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
+accel raw  ${last ? `${n(last.aX,2)} ${n(last.aY,2)} ${n(last.aZ,2)}` : "—"}
+browser    ${navigator.userAgent}`;
+}
+const n = (v,d=3) => (typeof v === "number" ? v.toFixed(d) : "—");
+setInterval(() => { if(device) updateDiag(); }, 1000);
+
+/* ---------- wiring ---------- */
+$("connect").onclick = connect;
+$("disconnect").onclick = disconnect;
+$("calStart").onclick = calStart;
+$("calRec").onclick = calRecord;
+$("calCancel").onclick = calCancel;
+$("save").onclick = async () => {
+  await cmd(C.SAVE); try{ await expect(R.RESULT); }catch(e){}
+  const b = $("save"); b.textContent = "Saved"; setTimeout(() => b.textContent = "Save to device", 1400);
+};
+$("defaults").onclick = async () => {
+  await cmd(C.DEFAULTS); try{ await expect(R.RESULT); }catch(e){}
+  await cmd(C.GET_SET);
+  try{
+    const s = await expect(R.SETTINGS);
+    const v = floats(s, 1, 8);
+    settings = { deadzone:v[0], speed:v[1], trimUp:v[2], trimDown:v[3],
+                 trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7] };
+    fillSettings();
+  }catch(e){}
+};
+$("copy").onclick = () => {
+  navigator.clipboard.writeText($("diag").textContent).then(() => {
+    const b = $("copy"); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy diagnostics", 1400);
+  });
+};
+</script>
+</body>
+</html>
