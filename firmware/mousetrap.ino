@@ -24,6 +24,10 @@
 
 #define DEBUG_USB 0         // 1 logs every raw-HID command to Serial
 
+// Cursor stays still this long after the scroll wheel moves, so turning the
+// knob doesn't drag the pointer with it.
+#define SCROLL_QUIET_MS 250
+
 void onDeviceCalibration();   // defined at the bottom
 
 // Declared up here because the IDE auto-generates prototypes at the top of
@@ -448,6 +452,8 @@ void loop() {
   bool leftPressed  = digitalRead(LEFT_CLICK_PIN)  == PRESSED;
   bool rightPressed = digitalRead(RIGHT_CLICK_PIN) == PRESSED;
 
+  static unsigned long lastScroll = 0;
+
   if (!calMode) {
     // ---- scroll ----
     long newPosition = encRead();
@@ -459,6 +465,7 @@ void loop() {
         mouseMove(0, 0, step);  amount -= step;
       }
       oldPosition = newPosition;
+      lastScroll = millis();
     }
 
     // ---- both buttons held = on-device calibration fallback ----
@@ -478,7 +485,8 @@ void loop() {
 
     static unsigned long lastButton = 0;
     if (leftPressed || rightPressed) lastButton = millis();
-    if (gripped && millis() - lastButton > set.buttonQuietMs)
+    if (gripped && millis() - lastButton > set.buttonQuietMs
+                && millis() - lastScroll > SCROLL_QUIET_MS)
       mouseMove(moveX, moveY, 0);
   }
 
