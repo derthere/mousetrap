@@ -22,7 +22,7 @@
 #define ENC_B 5
 #define PRESSED HIGH        // LOW if switches are wired COM->GND, NO->pin
 
-#define DEBUG_USB 1         // 1 logs every raw-HID command to Serial
+#define DEBUG_USB 0         // 1 logs every raw-HID command to Serial
 
 void onDeviceCalibration();   // defined at the bottom
 
