@@ -1,455 +1,518 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LED Card Animator</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mousetrap setup</title>
 <style>
-  :root {
-    --bg: #0d1117; --panel: #161b22; --border: #30363d;
-    --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7;
-    --good: #3fb950; --bad: #f85149;
+  :root{
+    --bg:#f6f5f2; --panel:#fff; --ink:#1a1a1a; --dim:#6b6b6b; --line:#e2e0da;
+    --accent:#c2410c; --ok:#15803d; --warn:#b45309; --bad:#b91c1c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--text); padding: 24px;
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
+      --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    }
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
-  .wrap { max-width: 920px; margin: 0 auto; }
-  .row { display: flex; gap: 16px; flex-wrap: wrap; }
-  .panel {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; flex: 1; min-width: 280px;
+  :root[data-theme="dark"]{
+    --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
+    --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
   }
-  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--muted); margin: 0 0 12px; }
-  button {
-    background: #21262d; color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px;
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:0 16px 64px;
   }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger  { border-color: var(--bad); color: var(--bad); }
-  .anim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .anim-grid button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
-  input[type=color] { width: 48px; height: 32px; padding: 0; border: 1px solid var(--border);
-    border-radius: 6px; background: none; cursor: pointer; vertical-align: middle; }
-  .val { color: var(--text); font-variant-numeric: tabular-nums; }
-  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
-  .dot.on { background: var(--good); }
-  canvas { width: 100%; height: 56px; display: block; background: #000;
-    border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; }
-  #log { background: #010409; border: 1px solid var(--border); border-radius: 8px;
-    padding: 10px; height: 120px; overflow-y: auto; font-family: ui-monospace, monospace;
-    font-size: 12px; color: var(--muted); white-space: pre-wrap; }
-  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .spacer { flex: 1; }
-  code { background: #21262d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .wrap{max-width:760px;margin:0 auto}
+  header{padding:32px 0 20px;border-bottom:1px solid var(--line);margin-bottom:24px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--dim);font-size:14px;margin:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 16px;font-weight:600}
+  button{
+    font:inherit;font-weight:500;padding:9px 16px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  }
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--dim)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.on{background:var(--ok)}
+  .hide{display:none !important}
+  /* live */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:620px){.grid{grid-template-columns:1fr}}
+  .pad{position:relative;aspect-ratio:1;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
+  .pad::before,.pad::after{content:"";position:absolute;background:var(--line)}
+  .pad::before{left:0;right:0;top:50%;height:1px}
+  .pad::after{top:0;bottom:0;left:50%;width:1px}
+  .dz{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:1px dashed var(--line);border-radius:50%}
+  .cursor{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);
+          transform:translate(-50%,-50%);transition:left .05s linear,top .05s linear}
+  .meter{margin-bottom:14px}
+  .meter label{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-bottom:4px}
+  .meter label b{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  .bar{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:4px;position:relative;overflow:hidden}
+  .bar i{position:absolute;top:0;bottom:0;background:var(--accent);display:block}
+  .bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.45}
+  .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;
+        border:1px solid var(--line);color:var(--dim)}
+  .pill.on{background:var(--ok);border-color:var(--ok);color:#fff}
+  /* steps */
+  ol.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  ol.steps li{counter-increment:s;display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+  ol.steps li:last-child{border-bottom:0}
+  ol.steps li::before{
+    content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;
+    border:1px solid var(--line);display:grid;place-items:center;font-size:12px;color:var(--dim)
+  }
+  ol.steps li.done::before{content:"✓";background:var(--ok);border-color:var(--ok);color:#fff}
+  ol.steps li.now::before{background:var(--accent);border-color:var(--accent);color:#fff}
+  .stepbody{flex:1;min-width:0}
+  .stepbody .t{font-weight:500}
+  .stepbody .d{font-size:13px;color:var(--dim);margin-top:2px;font-family:var(--mono)}
+  .note{font-size:13px;color:var(--dim);margin:14px 0 0}
+  .result{padding:12px 14px;border-radius:8px;margin-top:16px;font-size:14px;border:1px solid}
+  .result.ok{border-color:var(--ok);color:var(--ok)}
+  .result.bad{border-color:var(--bad);color:var(--bad)}
+  /* settings */
+  .set{display:grid;grid-template-columns:130px 1fr 60px;gap:12px;align-items:center;margin-bottom:12px}
+  .set label{font-size:14px}
+  .set output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--dim)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:12px;
+      font-family:var(--mono);font-size:12px;overflow-x:auto;margin:0}
+  .warnbox{background:var(--panel);border:1px solid var(--warn);color:var(--warn);
+           border-radius:8px;padding:14px;font-size:14px;margin-bottom:16px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🪶 LED Card Animator</h1>
-  <p class="sub">Web Bluetooth controller for the Faroe LED-card GATT service
-     (<code>fa700002-…</code>) — 24× APA102 DotStar strip.</p>
 
-  <div class="toolbar">
-    <button id="connect" class="primary">Connect</button>
-    <button id="disconnect" disabled>Disconnect</button>
-    <label style="margin:0; display:inline-flex; align-items:center; gap:5px; color:var(--text)">
-      <input type="checkbox" id="showAll" /> Show all devices
-    </label>
-    <label style="margin:0; display:inline-flex; align-items:center; gap:5px; color:var(--text)"
-           title="Write-with-response self-paces to the link and can't overflow the OS BLE buffer. Uncheck for faster (write-without-response) at the risk of stalls.">
-      <input type="checkbox" id="reliable" checked /> Reliable writes
-    </label>
-    <span class="status"><span id="dot" class="dot"></span><span id="statusText">Disconnected</span></span>
-    <span class="spacer"></span>
-    <button id="play" disabled>▶ Play</button>
-    <button id="stop" disabled>■ Stop</button>
-    <button id="clear" class="danger" disabled>Blank</button>
-  </div>
+<header>
+  <h1>mouse<span>trap</span> setup</h1>
+  <p class="sub">Calibrate and tune your device. Chrome or Edge required.</p>
+</header>
 
-  <canvas id="preview" width="720" height="56" title="Live preview"></canvas>
-  <p id="hint" class="sub" style="display:none; margin:6px 0 0">
-    🖌 <b>Paint mode</b> — click or drag pixels to set them to the base color.
-    Hold <code>Shift</code> or right-click to erase. <b>Blank</b> clears the canvas.
-  </p>
+<div id="unsupported" class="warnbox hide">
+  This browser doesn’t support WebHID. Open this page in Chrome or Edge — Safari and Firefox can’t talk to the device.
+</div>
 
-  <div class="row" style="margin-top:16px">
-    <div class="panel">
-      <h2>Animation</h2>
-      <div id="animGrid" class="anim-grid"></div>
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+    <div class="row">
+      <button id="connect" class="primary">Connect device</button>
+      <button id="disconnect" class="hide">Disconnect</button>
     </div>
-
-    <div class="panel" style="flex:0 0 280px">
-      <h2>Parameters</h2>
-      <label>Base color</label>
-      <input type="color" id="color" value="#00ccff" />
-
-      <label>Brightness <span class="val" id="briVal">8</span> / 10</label>
-      <input type="range" id="brightness" min="0" max="10" value="8" />
-
-      <label>Speed <span class="val" id="speedVal">1.0</span>×</label>
-      <input type="range" id="speed" min="1" max="40" value="10" />
-
-      <label>Send interval <span class="val" id="rateVal">80</span> ms</label>
-      <input type="range" id="rate" min="30" max="300" value="80" />
-    </div>
-  </div>
-
-  <div class="panel" style="margin-top:16px">
-    <h2>Log</h2>
-    <div id="log"></div>
   </div>
 </div>
 
+<div id="app" class="hide">
+
+  <div class="panel">
+    <h2>Live readings</h2>
+    <div class="grid">
+      <div>
+        <div class="pad" id="pad">
+          <div class="dz" id="dz"></div>
+          <div class="cursor" id="cur" style="left:50%;top:50%"></div>
+        </div>
+        <p class="note">Where the cursor would move. The dashed circle is the deadzone.</p>
+      </div>
+      <div>
+        <div class="meter">
+          <label>Magnet <b id="magV">0.00</b></label>
+          <div class="bar"><i id="magB" style="left:0;width:0"></i><u id="magOnM"></u><u id="magOffM"></u></div>
+        </div>
+        <div class="meter">
+          <label>Tilt X <b id="dxV">0.00</b></label>
+          <div class="bar"><i id="dxB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="meter">
+          <label>Tilt Y <b id="dyV">0.00</b></label>
+          <div class="bar"><i id="dyB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="row" style="margin-top:18px">
+          <span class="pill" id="pGrip">moving</span>
+          <span class="pill" id="pL">left</span>
+          <span class="pill" id="pR">right</span>
+          <span class="pill" id="pEnc" style="font-family:var(--mono)">enc 0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Calibration</h2>
+    <p class="note" style="margin:0 0 16px">
+      Sets up the handle for your unit. You only need this once per enclosure,
+      or after moving the magnet. The cursor stays still while it runs.
+    </p>
+    <ol class="steps" id="steps">
+      <li data-k="rest"><div class="stepbody"><div class="t">Rest — hands off the handle</div><div class="d" id="d-rest">not recorded</div></div></li>
+      <li data-k="0"><div class="stepbody"><div class="t">Push <b>up</b> and hold</div><div class="d" id="d-0">not recorded</div></div></li>
+      <li data-k="1"><div class="stepbody"><div class="t">Push <b>down</b> and hold</div><div class="d" id="d-1">not recorded</div></div></li>
+      <li data-k="2"><div class="stepbody"><div class="t">Push <b>left</b> and hold</div><div class="d" id="d-2">not recorded</div></div></li>
+      <li data-k="3"><div class="stepbody"><div class="t">Push <b>right</b> and hold</div><div class="d" id="d-3">not recorded</div></div></li>
+    </ol>
+    <div class="row" style="margin-top:18px">
+      <button id="calStart" class="primary">Start calibration</button>
+      <button id="calRec" class="hide">Record this step</button>
+      <button id="calCancel" class="hide">Cancel</button>
+    </div>
+    <div id="calMsg" class="result hide"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Feel</h2>
+    <div class="set"><label for="sSpeed">Speed</label><input type="range" id="sSpeed" min="5" max="60" step="1"><output id="oSpeed"></output></div>
+    <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
+    <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
+    <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
+    <div class="set"><label for="sTU">Trim up</label><input type="range" id="sTU" min="0.5" max="2" step="0.05"><output id="oTU"></output></div>
+    <div class="set"><label for="sTD">Trim down</label><input type="range" id="sTD" min="0.5" max="2" step="0.05"><output id="oTD"></output></div>
+    <div class="set"><label for="sTL">Trim left</label><input type="range" id="sTL" min="0.5" max="2" step="0.05"><output id="oTL"></output></div>
+    <div class="set"><label for="sTR">Trim right</label><input type="range" id="sTR" min="0.5" max="2" step="0.05"><output id="oTR"></output></div>
+    <div class="row" style="margin-top:16px">
+      <button id="save" class="primary">Save to device</button>
+      <button id="defaults">Reset to defaults</button>
+    </div>
+    <p class="note">Changes apply live. Save writes them to the device so they survive unplugging.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Diagnostics</h2>
+    <pre id="diag">—</pre>
+    <div class="row" style="margin-top:14px">
+      <button id="copy">Copy diagnostics</button>
+    </div>
+    <p class="note">If something isn’t working, copy this and send it over.</p>
+  </div>
+
+</div>
+</div>
+
 <script>
-// ─── GATT protocol (mirrors apps/nightengale-main/src/led_card.rs) ──────────
-const SERVICE_UUID = 'fa700002-0000-0000-0000-000000000000';
-const CONFIG_UUID  = 'fa700002-0001-0000-0000-000000000000';
-const WRITE_UUID   = 'fa700002-0002-0000-0000-000000000000';
+"use strict";
+const RID = 2, USAGE_PAGE = 0xFF00, RAW_SIZE = 63;
+const C = { PING:0x01, STREAM:0x10, GET_SET:0x11, SET_SET:0x12, GET_CAL:0x13,
+            CAL_BEGIN:0x20, CAL_REST:0x21, CAL_DIR:0x22, CAL_COMPUTE:0x23,
+            CAL_ABORT:0x24, SAVE:0x30, DEFAULTS:0x31 };
+const R = { PONG:0x81, SETTINGS:0x91, CAL:0x93, REST:0xA1, DIR:0xA2, RESULT:0xA3, STATE:0x50 };
+const $ = id => document.getElementById(id);
 
-const CMD_BLANK = 0, CMD_WRITE = 1, CMD_FLUSH = 2, CMD_WRITE_FLUSH = 3;
-const LED_COUNT = 24;
-// Keep every write ≤ 18 B so it fits even the BLE-minimum ATT MTU of 23
-// (max write = MTU − 3 = 20 B). 3 header bytes + 5 RGB triples = 18 B.
-// The firmware offers MTU 27, but the central (e.g. Chrome+BlueZ on Linux)
-// often doesn't negotiate up, and a 24 B write then fails as "GATT operation
-// failed for unknown reason" before it ever reaches the device.
-const PX_PER_CHUNK = 5;
+let device = null, settings = null, calInfo = null, waiters = [];
 
-// ─── State ──────────────────────────────────────────────────────────────────
-let device = null, writeChar = null, configChar = null, writeNoResp = true;
-let playing = false, raf = 0, lastSend = 0, sending = false, animState = {};
-let currentAnim = 'rainbow';
-const px = Array.from({ length: LED_COUNT }, () => [0, 0, 0]);
-// Persistent canvas for Paint mode — survives play/stop and animation switches.
-const paintBuf = Array.from({ length: LED_COUNT }, () => [0, 0, 0]);
+if (!("hid" in navigator)) { $("unsupported").classList.remove("hide"); $("connect").disabled = true; }
 
-const $ = (id) => document.getElementById(id);
-function log(msg) {
-  const el = $('log');
-  el.textContent += msg + '\n';
-  el.scrollTop = el.scrollHeight;
+/* ---------- transport ---------- */
+function send(bytes){
+  if(!device) return Promise.resolve();
+  const buf = new Uint8Array(RAW_SIZE);
+  buf.set(bytes.slice(0, RAW_SIZE));
+  return device.sendReport(RID, buf).catch(e => log("send failed: "+e.message));
+}
+function cmd(op, payload = []){ return send([op, ...payload]); }
+function expect(code, ms = 4000){
+  return new Promise((res, rej) => {
+    const w = { code, res, t: setTimeout(() => {
+      waiters = waiters.filter(x => x !== w); rej(new Error("device did not reply"));
+    }, ms) };
+    waiters.push(w);
+  });
+}
+function f32(arr){ const b = new ArrayBuffer(4); new DataView(b).setFloat32(0, arr, true); return [...new Uint8Array(b)]; }
+function floats(dv, start, n){ const o = []; for(let i=0;i<n;i++) o.push(dv.getFloat32(start+i*4, true)); return o; }
+
+function onReport(e){
+  if(e.reportId !== RID) return;
+  const dv = e.data, code = dv.getUint8(0);
+  if(code === R.STATE){ renderState(dv); return; }
+  const w = waiters.find(x => x.code === code);
+  if(w){ clearTimeout(w.t); waiters = waiters.filter(x => x !== w); w.res(dv); }
 }
 
-// ─── Color helpers ────────────────────────────────────────────────────────
-function hexToRgb(hex) {
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-}
-function hsv(h, s, v) { // h,s,v ∈ [0,1]
-  h = (h % 1 + 1) % 1;
-  const i = Math.floor(h * 6), f = h * 6 - i;
-  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
-  const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-}
-const scale = (c, f) => [Math.round(c[0] * f), Math.round(c[1] * f), Math.round(c[2] * f)];
-const clearPx = () => { for (let i = 0; i < LED_COUNT; i++) px[i] = [0, 0, 0]; };
+/* ---------- connect ---------- */
+async function connect(){
+  let devs;
+  try{ devs = await navigator.hid.requestDevice({ filters:[{ usagePage: USAGE_PAGE }] }); }
+  catch(e){ return; }
+  if(!devs.length) return;
+  device = devs[0];
+  if(!device.opened) await device.open();
+  device.addEventListener("inputreport", onReport);
+  navigator.hid.addEventListener("disconnect", ev => { if(ev.device === device) teardown(); });
 
-// ─── Animations: render(t, color, speed, state) mutates the shared px[] ─────
-const ANIMATIONS = {
-  paint: { label: '🖌 Paint', paint: true,
-    render() { for (let i = 0; i < LED_COUNT; i++) px[i] = [...paintBuf[i]]; } },
-
-  off: { label: 'Off', render() { clearPx(); } },
-
-  solid: { label: 'Solid', render(t, c) { for (let i = 0; i < LED_COUNT; i++) px[i] = [...c]; } },
-
-  rainbow: { label: 'Rainbow', render(t, c, sp) {
-    for (let i = 0; i < LED_COUNT; i++) px[i] = hsv(i / LED_COUNT + t * sp * 0.15, 1, 1);
-  } },
-
-  comet: { label: 'Comet', render(t, c, sp) {
-    const tail = 7, head = (t * sp * 7) % LED_COUNT;
-    for (let i = 0; i < LED_COUNT; i++) {
-      const d = (head - i + LED_COUNT) % LED_COUNT;
-      px[i] = d < tail ? scale(c, 1 - d / tail) : [0, 0, 0];
-    }
-  } },
-
-  cylon: { label: 'Cylon', render(t, c, sp) {
-    const w = 4, ph = (t * sp * 0.6) % 2, p = ph < 1 ? ph : 2 - ph, head = p * (LED_COUNT - 1);
-    for (let i = 0; i < LED_COUNT; i++) {
-      const d = Math.abs(i - head);
-      px[i] = d < w ? scale(c, 1 - d / w) : [0, 0, 0];
-    }
-  } },
-
-  theater: { label: 'Theater', render(t, c, sp) {
-    const off = Math.floor(t * sp * 5) % 3;
-    for (let i = 0; i < LED_COUNT; i++) px[i] = (i % 3) === off ? [...c] : [0, 0, 0];
-  } },
-
-  wipe: { label: 'Color Wipe', render(t, c, sp) {
-    const step = Math.floor(t * sp * 10) % (LED_COUNT * 2);
-    for (let i = 0; i < LED_COUNT; i++) {
-      const on = step < LED_COUNT ? i <= step : i > step - LED_COUNT;
-      px[i] = on ? [...c] : [0, 0, 0];
-    }
-  } },
-
-  breathe: { label: 'Breathe', render(t, c, sp) {
-    let f = Math.sin(t * sp * 1.5) * 0.5 + 0.5; f *= f;
-    const s = scale(c, f);
-    for (let i = 0; i < LED_COUNT; i++) px[i] = [...s];
-  } },
-
-  twinkle: { label: 'Twinkle', render(t, c, sp, st) {
-    if (!st.lvl) st.lvl = new Float32Array(LED_COUNT);
-    const spawn = 0.04 * sp;
-    for (let i = 0; i < LED_COUNT; i++) {
-      st.lvl[i] *= 0.88;
-      if (Math.random() < spawn) st.lvl[i] = 1;
-      px[i] = scale(c, st.lvl[i]);
-    }
-  } },
-
-  fire: { label: 'Fire', render(t, c, sp, st) {
-    if (!st.heat) st.heat = new Float32Array(LED_COUNT);
-    for (let i = 0; i < LED_COUNT; i++) {
-      st.heat[i] = Math.max(0, st.heat[i] - Math.random() * 0.12 * sp);
-      if (Math.random() < 0.25 * sp) st.heat[i] = Math.min(1, st.heat[i] + Math.random() * 0.6);
-      const h = st.heat[i];
-      px[i] = [Math.round(255 * h), Math.round(90 * h * h), Math.round(10 * h * h * h)];
-    }
-  } },
-};
-
-// ─── BLE write path ─────────────────────────────────────────────────────────
-async function writeBytes(bytes) {
-  const buf = new Uint8Array(bytes);
-  if (writeNoResp && writeChar.writeValueWithoutResponse) {
-    await writeChar.writeValueWithoutResponse(buf);
-  } else if (writeChar.writeValueWithResponse) {
-    await writeChar.writeValueWithResponse(buf);
-  } else {
-    await writeChar.writeValue(buf); // legacy fallback
-  }
-}
-
-// Set to true once a full-frame write is rejected (link MTU too small),
-// so we stop retrying it and stick to chunked writes for the session.
-let forceChunked = false;
-
-// Paint the whole strip. Fast path: one WRITE_FLUSH carrying all 24 pixels
-// (needs ATT MTU ≥ 78 — the firmware offers mtu-128). Fallback: chunked
-// WRITE commands + a FLUSH, which fits even the 23-byte minimum MTU.
-async function sendFrame(brightness) {
-  if (!forceChunked) {
-    const b = new Uint8Array(3 + LED_COUNT * 3); // [WRITE_FLUSH, 0, bri, RGB×24] = 75 B
-    b[0] = CMD_WRITE_FLUSH; b[1] = 0; b[2] = brightness;
-    for (let i = 0; i < LED_COUNT; i++) {
-      const p = px[i];
-      b[3 + i * 3] = p[0]; b[4 + i * 3] = p[1]; b[5 + i * 3] = p[2];
-    }
-    try {
-      await writeBytes(b);
-      return; // one write per frame — the fast path
-    } catch (e) {
-      // Almost certainly the value exceeded the negotiated ATT MTU.
-      forceChunked = true;
-      log('full-frame write rejected (low MTU); using chunked writes: ' + e.message);
-    }
-  }
-
-  // Chunked fallback: ≤5 px per WRITE (18 B, fits MTU 23) then a FLUSH.
-  for (let i = 0; i < LED_COUNT; i += PX_PER_CHUNK) {
-    const count = Math.min(PX_PER_CHUNK, LED_COUNT - i);
-    const b = new Uint8Array(3 + count * 3);
-    b[0] = CMD_WRITE; b[1] = i; b[2] = brightness;
-    for (let j = 0; j < count; j++) {
-      const p = px[i + j];
-      b[3 + j * 3] = p[0]; b[4 + j * 3] = p[1]; b[5 + j * 3] = p[2];
-    }
-    await writeBytes(b);
-  }
-  await writeBytes([CMD_FLUSH]);
-}
-
-// ─── Render loop (preview always; BLE throttled by send interval) ───────────
-function tick(now) {
-  if (!playing) return;
-  const t = now / 1000;
-  const color = hexToRgb($('color').value);
-  const speed = (+$('speed').value) / 10;
-  const rate = +$('rate').value;
-
-  ANIMATIONS[currentAnim].render(t, color, speed, animState);
-  drawPreview();
-
-  const connected = device && device.gatt && device.gatt.connected && writeChar;
-  if (connected && !sending && now - lastSend >= rate) {
-    lastSend = now; sending = true;
-    sendFrame(+$('brightness').value)
-      .catch((e) => log('⚠ write failed: ' + e.message))
-      .finally(() => { sending = false; });
-  }
-  raf = requestAnimationFrame(tick);
-}
-
-function startLoop() {
-  if (playing) return;
-  animState = {};
-  playing = true;
-  $('play').disabled = true; $('stop').disabled = false;
-  raf = requestAnimationFrame(tick);
-}
-function stopLoop() {
-  playing = false; cancelAnimationFrame(raf);
-  $('play').disabled = !(device && device.gatt.connected); $('stop').disabled = true;
-}
-
-// ─── Preview canvas ──────────────────────────────────────────────────────────
-const ctx = $('preview').getContext('2d');
-function drawPreview() {
-  const W = ctx.canvas.width, H = ctx.canvas.height;
-  const bri = (+$('brightness').value) / 10;
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  const r = 11, gap = W / LED_COUNT;
-  for (let i = 0; i < LED_COUNT; i++) {
-    const [pr, pg, pb] = scale(px[i], bri);
-    const x = gap * (i + 0.5), y = H / 2;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgb(${pr},${pg},${pb})`; ctx.fill();
-    if (pr + pg + pb > 30) {
-      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 14; ctx.fill(); ctx.shadowBlur = 0;
-    }
-  }
-}
-
-// ─── Paint mode: click / drag pixels in the preview canvas ──────────────────
-const canvas = ctx.canvas;
-let painting = false;
-
-function pixelAt(ev) {
-  const rect = canvas.getBoundingClientRect();
-  const x = (ev.clientX - rect.left) / rect.width * canvas.width; // → internal coords
-  const i = Math.floor(x / (canvas.width / LED_COUNT));
-  return Math.max(0, Math.min(LED_COUNT - 1, i));
-}
-function applyPaint(ev) {
-  // Right button or Shift erases; left button paints the base color.
-  const erase = ev.shiftKey || (ev.buttons & 2) || ev.button === 2;
-  paintBuf[pixelAt(ev)] = erase ? [0, 0, 0] : hexToRgb($('color').value);
-  drawPreview();
-}
-canvas.addEventListener('pointerdown', (e) => {
-  if (currentAnim !== 'paint') return;
-  painting = true; canvas.setPointerCapture(e.pointerId); applyPaint(e);
-});
-canvas.addEventListener('pointermove', (e) => { if (painting) applyPaint(e); });
-canvas.addEventListener('pointerup', () => { painting = false; });
-canvas.addEventListener('contextmenu', (e) => { if (currentAnim === 'paint') e.preventDefault(); });
-
-// ─── Connection ──────────────────────────────────────────────────────────────
-async function connect() {
-  if (!navigator.bluetooth) {
-    log('✗ Web Bluetooth unavailable. Use Chrome/Edge over https or http://localhost.');
+  try{
+    await cmd(C.PING);
+    const dv = await expect(R.PONG);
+    const proto = dv.getUint8(1), fw = dv.getUint8(2), valid = dv.getUint8(3);
+    const tilt = dv.getFloat32(4, true);
+    calInfo = { proto, fw, valid: !!valid, tilt };
+    setStatus(true, `Connected — firmware v${fw}` + (valid ? "" : " · not calibrated yet"));
+  }catch(err){
+    setStatus(false, "Connected, but the device didn’t respond. Is the raw-HID firmware loaded?");
     return;
   }
-  try {
-    // The board advertises its name ("LED Card") but NOT the service UUID,
-    // so we can only filter by name — and name filtering is flaky on some
-    // platforms (notably Chrome+BlueZ on Linux). "Show all devices" falls back
-    // to acceptAllDevices, which lists every advertiser so you can pick it
-    // manually; the service is still reachable because it's in optionalServices.
-    const opts = $('showAll').checked
-      ? { acceptAllDevices: true, optionalServices: [SERVICE_UUID] }
-      : { filters: [{ namePrefix: 'LED' }], optionalServices: [SERVICE_UUID] };
-    log('Requesting device… (' + ($('showAll').checked ? 'all devices' : 'name filter') + ')');
-    device = await navigator.bluetooth.requestDevice(opts);
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-    log('Connecting to ' + device.name + '…');
-    const server = await device.gatt.connect();
-    const svc = await server.getPrimaryService(SERVICE_UUID);
-    writeChar = await svc.getCharacteristic(WRITE_UUID);
-    try { configChar = await svc.getCharacteristic(CONFIG_UUID); } catch { configChar = null; }
-    // "Reliable writes" forces write-with-response, which self-paces to the
-    // link and can't overflow the OS BLE buffer. Without it we use
-    // write-without-response (faster, but can stall under sustained traffic).
-    writeNoResp = writeChar.properties.writeWithoutResponse && !$('reliable').checked;
-    forceChunked = false; // re-probe full-frame writes on this connection
-    setConnected(true);
-    log('✓ Connected. Write mode: ' + (writeNoResp ? 'no-response' : 'with-response'));
-  } catch (e) {
-    if (e.name === 'NotFoundError') {
-      // Either the user dismissed the chooser, or nothing matched the filter.
-      log('✗ No device selected/found. If the board is powered & advertising '
-        + 'but not listed, tick “Show all devices” and try again. Also confirm '
-        + 'it isn’t already connected elsewhere (a connected board stops advertising).');
+
+  await cmd(C.GET_SET);
+  const s = await expect(R.SETTINGS);
+  const v = floats(s, 1, 8);
+  settings = { speed:v[1], deadzone:v[0], trimUp:v[2], trimDown:v[3],
+               trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7] };
+  fillSettings();
+
+  await cmd(C.GET_CAL);
+  const c = await expect(R.CAL);
+  const cv = floats(c, 2, 11);
+  calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3],
+                  gUp:cv[4], gDown:cv[5], gLeft:cv[6], gRight:cv[7],
+                  magOn:cv[8], magOff:cv[9] };
+  placeMagMarkers();
+
+  $("app").classList.remove("hide");
+  $("connect").classList.add("hide");
+  $("disconnect").classList.remove("hide");
+  await cmd(C.STREAM, [1]);
+  updateDiag();
+}
+
+function teardown(){
+  device = null; $("app").classList.add("hide");
+  $("connect").classList.remove("hide"); $("disconnect").classList.add("hide");
+  setStatus(false, "Not connected");
+}
+async function disconnect(){
+  try{ await cmd(C.STREAM,[0]); await device.close(); }catch(e){}
+  teardown();
+}
+function setStatus(on, text){ $("dot").classList.toggle("on", on); $("statusText").textContent = text; }
+
+/* ---------- live ---------- */
+let last = null;
+function renderState(dv){
+  const flags = dv.getUint8(1);
+  const v = floats(dv, 2, 11);
+  const st = { grip:!!(flags&1), left:!!(flags&2), right:!!(flags&4), cal:!!(flags&8),
+               dX:v[0], dY:v[1], mag:v[2], sx:v[3], sy:v[4],
+               moveX:v[5], moveY:v[6], enc:v[7], aX:v[8], aY:v[9], aZ:v[10] };
+  last = st;
+
+  $("magV").textContent = st.mag.toFixed(2);
+  $("magB").style.width = Math.min(100, st.mag/20*100) + "%";
+  bar("dx", st.dX); bar("dy", st.dY);
+  $("dxV").textContent = st.dX.toFixed(2);
+  $("dyV").textContent = st.dY.toFixed(2);
+
+  const px = 50 + Math.max(-1,Math.min(1, st.sx)) * 45;
+  const py = 50 + Math.max(-1,Math.min(1, st.sy)) * 45;
+  $("cur").style.left = px + "%"; $("cur").style.top = py + "%";
+  $("cur").style.opacity = st.grip ? 1 : .3;
+
+  $("pGrip").classList.toggle("on", st.grip);
+  $("pL").classList.toggle("on", st.left);
+  $("pR").classList.toggle("on", st.right);
+  $("pEnc").textContent = "enc " + st.enc;
+}
+function bar(id, val){
+  const pct = Math.max(-1, Math.min(1, val/4)) * 50;
+  const el = $(id+"B");
+  if(pct >= 0){ el.style.left = "50%"; el.style.width = pct + "%"; }
+  else { el.style.left = (50+pct) + "%"; el.style.width = (-pct) + "%"; }
+}
+function placeMagMarkers(){
+  if(!calInfo?.cal) return;
+  $("magOnM").style.left = Math.min(100, calInfo.cal.magOn/20*100) + "%";
+  $("magOffM").style.left = Math.min(100, calInfo.cal.magOff/20*100) + "%";
+}
+function sizeDeadzone(){
+  const d = settings ? settings.deadzone : 0.35;
+  const pct = Math.min(90, d * 90);
+  $("dz").style.width = pct + "%"; $("dz").style.height = pct + "%";
+}
+
+/* ---------- calibration ---------- */
+const ORDER = ["rest","0","1","2","3"];
+let stepIdx = -1;
+
+function markStep(){
+  document.querySelectorAll("#steps li").forEach(li => {
+    const k = li.dataset.k, i = ORDER.indexOf(k);
+    li.classList.toggle("done", i < stepIdx);
+    li.classList.toggle("now", i === stepIdx);
+  });
+  if(stepIdx >= 0 && stepIdx < ORDER.length){
+    const k = ORDER[stepIdx];
+    $("calRec").textContent = k === "rest" ? "Record rest" : "Record — I’m holding it";
+  }
+}
+async function calStart(){
+  $("calMsg").classList.add("hide");
+  ORDER.forEach(k => $("d-"+k).textContent = "not recorded");
+  await cmd(C.CAL_BEGIN); await expect(R.RESULT);
+  stepIdx = 0; markStep();
+  $("calStart").classList.add("hide");
+  $("calRec").classList.remove("hide");
+  $("calCancel").classList.remove("hide");
+}
+async function calRecord(){
+  const k = ORDER[stepIdx];
+  $("calRec").disabled = true;
+  $("calRec").textContent = "Recording… keep holding";
+  try{
+    if(k === "rest"){
+      await cmd(C.CAL_REST);
+      const dv = await expect(R.REST, 8000);
+      const v = floats(dv, 2, 4);
+      $("d-rest").textContent = `magnet noise ${v[0].toFixed(2)}`;
     } else {
-      log('✗ ' + e.name + ': ' + e.message);
+      await cmd(C.CAL_DIR, [parseInt(k)]);
+      const dv = await expect(R.DIR, 8000);
+      const v = floats(dv, 2, 4);
+      $("d-"+k).textContent = `tilt ${v[0].toFixed(2)}, ${v[1].toFixed(2)} · magnet ${v[2].toFixed(1)}–${v[3].toFixed(1)}`;
     }
-  }
+  }catch(err){ showCal(false, err.message); resetCalUI(); return; }
+  $("calRec").disabled = false;
+  stepIdx++;
+  if(stepIdx >= ORDER.length) return calCompute();
+  markStep();
 }
+async function calCompute(){
+  $("calRec").classList.add("hide");
+  try{
+    await cmd(C.CAL_COMPUTE);
+    const dv = await expect(R.RESULT, 6000);
+    const err = dv.getUint8(1);
+    if(err){
+      const msgs = { 1:"A step is missing — run it again.",
+                     2:"The pushes were too small or too alike. Push further and hold steady.",
+                     3:"The four directions didn’t come out distinct. Make sure each push goes the way the step says.",
+                     4:"The magnet can’t tell a push from rest. The magnet may need to sit closer to the sensor." };
+      showCal(false, msgs[err] || ("Failed (code "+err+")"));
+    } else {
+      const v = floats(dv, 2, 5);
+      showCal(true, `Saved. Magnet margin ${v[4].toFixed(1)}×` +
+        (v[4] < 1.8 ? " — thin, but usable. Movement may feel hesitant on the weakest side." : " — good."));
+      await cmd(C.GET_CAL);
+      const c = await expect(R.CAL);
+      const cv = floats(c, 2, 11);
+      calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3], gUp:cv[4], gDown:cv[5],
+                      gLeft:cv[6], gRight:cv[7], magOn:cv[8], magOff:cv[9] };
+      calInfo.valid = true;
+      placeMagMarkers(); updateDiag();
+    }
+  }catch(err){ showCal(false, err.message); }
+  resetCalUI();
+}
+function showCal(ok, text){
+  const el = $("calMsg");
+  el.className = "result " + (ok ? "ok" : "bad");
+  el.textContent = text;
+}
+function resetCalUI(){
+  stepIdx = -1; markStep();
+  $("calStart").classList.remove("hide"); $("calStart").textContent = "Run calibration again";
+  $("calRec").classList.add("hide"); $("calRec").disabled = false;
+  $("calCancel").classList.add("hide");
+}
+async function calCancel(){ await cmd(C.CAL_ABORT); try{ await expect(R.RESULT); }catch(e){} resetCalUI(); }
 
-function disconnect() {
-  if (device && device.gatt.connected) device.gatt.disconnect();
+/* ---------- settings ---------- */
+const SLIDERS = [
+  ["sSpeed","oSpeed","speed", v=>v.toFixed(0)],
+  ["sDead","oDead","deadzone", v=>v.toFixed(2)],
+  ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
+  ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
+  ["sTU","oTU","trimUp", v=>v.toFixed(2)],
+  ["sTD","oTD","trimDown", v=>v.toFixed(2)],
+  ["sTL","oTL","trimLeft", v=>v.toFixed(2)],
+  ["sTR","oTR","trimRight", v=>v.toFixed(2)],
+];
+function fillSettings(){
+  SLIDERS.forEach(([s,o,key,fmt]) => {
+    $(s).value = settings[key];
+    $(o).textContent = fmt(settings[key]);
+  });
+  sizeDeadzone();
 }
-function onDisconnected() {
-  log('Device disconnected.');
-  setConnected(false);
+let pushTimer = null;
+function pushSettings(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    const p = [...f32(settings.deadzone), ...f32(settings.speed),
+               ...f32(settings.trimUp), ...f32(settings.trimDown),
+               ...f32(settings.trimLeft), ...f32(settings.trimRight),
+               ...f32(settings.scroll), ...f32(settings.quiet)];
+    await cmd(C.SET_SET, p);
+    try{ await expect(R.SETTINGS); }catch(e){}
+    updateDiag();
+  }, 120);
 }
-function setConnected(on) {
-  $('dot').classList.toggle('on', on);
-  $('statusText').textContent = on ? ('Connected — ' + device.name) : 'Disconnected';
-  $('connect').disabled = on; $('disconnect').disabled = !on;
-  $('play').disabled = !on || playing; $('clear').disabled = !on;
-  if (!on) { writeChar = null; stopLoop(); }
-}
+SLIDERS.forEach(([s,o,key,fmt]) => {
+  $(s).addEventListener("input", e => {
+    settings[key] = parseFloat(e.target.value);
+    $(o).textContent = fmt(settings[key]);
+    if(key === "deadzone") sizeDeadzone();
+    pushSettings();
+  });
+});
 
-// Blank: clear + flush ([BLANK, 1]); also enters manual mode on the device.
-async function blank() {
-  for (let i = 0; i < LED_COUNT; i++) paintBuf[i] = [0, 0, 0]; // also reset Paint canvas
-  try { await writeBytes([CMD_BLANK, 1]); clearPx(); drawPreview(); log('Strip blanked.'); }
-  catch (e) { log('⚠ blank failed: ' + e.message); }
+/* ---------- diagnostics ---------- */
+function updateDiag(){
+  if(!calInfo) return;
+  const c = calInfo.cal || {};
+  const s = settings || {};
+  $("diag").textContent =
+`mousetrap diagnostics
+firmware v${calInfo.fw}  protocol v${calInfo.proto}  calibrated: ${calInfo.valid}
+
+rotation   XX ${n(c.XX)}  XY ${n(c.XY)}  YX ${n(c.YX)}  YY ${n(c.YY)}
+gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.gRight)}
+magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
+
+speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
+trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
+
+live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
+accel raw  ${last ? `${n(last.aX,2)} ${n(last.aY,2)} ${n(last.aZ,2)}` : "—"}
+browser    ${navigator.userAgent}`;
 }
+const n = (v,d=3) => (typeof v === "number" ? v.toFixed(d) : "—");
+setInterval(() => { if(device) updateDiag(); }, 1000);
 
-// ─── UI wiring ───────────────────────────────────────────────────────────────
-function selectAnim(key) {
-  currentAnim = key; animState = {};
-  [...$('animGrid').children].forEach((c) => c.classList.toggle('active', c.dataset.key === key));
-  const isPaint = !!ANIMATIONS[key].paint;
-  canvas.style.cursor = isPaint ? 'crosshair' : 'default';
-  $('hint').style.display = isPaint ? 'block' : 'none';
-  drawPreview();
-  // In Paint mode, keep streaming so the canvas latches and the device
-  // stays in manual control (it auto-resumes its chaser ~30 s after the
-  // last write). Needs a live connection to start the loop.
-  if (isPaint && device && device.gatt.connected) startLoop();
-}
-
-function buildAnimGrid() {
-  const grid = $('animGrid');
-  for (const [key, a] of Object.entries(ANIMATIONS)) {
-    const btn = document.createElement('button');
-    btn.textContent = a.label; btn.dataset.key = key;
-    btn.classList.toggle('active', key === currentAnim);
-    btn.onclick = () => selectAnim(key);
-    grid.appendChild(btn);
-  }
-}
-
-$('connect').onclick = connect;
-$('disconnect').onclick = disconnect;
-$('play').onclick = startLoop;
-$('stop').onclick = stopLoop;
-$('clear').onclick = blank;
-$('brightness').oninput = (e) => { $('briVal').textContent = e.target.value; drawPreview(); };
-$('speed').oninput = (e) => { $('speedVal').textContent = (e.target.value / 10).toFixed(1); };
-$('rate').oninput = (e) => { $('rateVal').textContent = e.target.value; };
-
-buildAnimGrid();
-drawPreview();
-log('Ready. Click Connect and pick "LED Card".');
+/* ---------- wiring ---------- */
+$("connect").onclick = connect;
+$("disconnect").onclick = disconnect;
+$("calStart").onclick = calStart;
+$("calRec").onclick = calRecord;
+$("calCancel").onclick = calCancel;
+$("save").onclick = async () => {
+  await cmd(C.SAVE); try{ await expect(R.RESULT); }catch(e){}
+  const b = $("save"); b.textContent = "Saved"; setTimeout(() => b.textContent = "Save to device", 1400);
+};
+$("defaults").onclick = async () => {
+  await cmd(C.DEFAULTS); try{ await expect(R.RESULT); }catch(e){}
+  await cmd(C.GET_SET);
+  try{
+    const s = await expect(R.SETTINGS);
+    const v = floats(s, 1, 8);
+    settings = { deadzone:v[0], speed:v[1], trimUp:v[2], trimDown:v[3],
+                 trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7] };
+    fillSettings();
+  }catch(e){}
+};
+$("copy").onclick = () => {
+  navigator.clipboard.writeText($("diag").textContent).then(() => {
+    const b = $("copy"); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy diagnostics", 1400);
+  });
+};
 </script>
 </body>
 </html>
