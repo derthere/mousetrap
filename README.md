@@ -35,10 +35,9 @@ The IMU connects over Qwiic — no soldering, no level shifting, since the RP235
 
 ## Firmware
 
-Two sketches live in `/firmware`:
+`firmware/mousetrap.ino` presents as a USB mouse *and* a vendor HID device the setup page talks to.
 
-- **`mousetrap.ino`** — the full build. Presents as a USB mouse *and* a raw-HID device the setup page talks to.
-- **`mousetrap-serial.ino`** — same behaviour, calibration driven from the Arduino Serial Monitor instead. Useful on the bench.
+Set `DEBUG_USB` to 1 near the top to log every incoming raw-HID command to Serial. Useful when the page won't connect; off by default.
 
 ### Building
 
@@ -52,7 +51,14 @@ Two sketches live in `/firmware`:
 4. *Tools → USB Stack* → **Adafruit TinyUSB**. Required — the mouse won't enumerate on the Pico SDK stack.
 5. First upload: hold **BOOT** while plugging in the USB cable. A drive appears; the IDE flashes to it. Afterwards a normal serial port shows up and you can upload to that instead.
 
-The IDE often reports `Failed uploading: exit status 1` right after a successful BOOTSEL flash. The board reboots and unmounts the drive before the IDE finishes tidying up. If you saw `Wrote … bytes`, it worked.
+After any upload that changes the USB descriptor, **unplug and replug** — macOS caches HID descriptors and will otherwise keep using the old one.
+
+Two things that look like failures but aren't:
+
+- `Failed uploading: exit status 1` right after a BOOTSEL flash. The board reboots and unmounts the drive before the IDE finishes tidying up. If you saw `Wrote … bytes`, it worked.
+- `No monitor available for the port protocol uf2conv`. The Serial Monitor can't attach to a board sitting in bootloader mode. Close it and upload anyway.
+
+If the IDE reports `'Sample' does not name a type`, the struct has been moved below its first use — it must stay above, because the IDE generates function prototypes at the top of the file.
 
 ---
 
@@ -61,7 +67,7 @@ The IDE often reports `Failed uploading: exit status 1` right after a successful
 Every cycle (~50 Hz) the firmware:
 
 1. Reads the IMU and subtracts the resting baseline, giving tilt deltas `dX, dY`.
-2. Rotates those into screen axes. The sensor rarely sits square to the handle's push directions — in the current enclosure it's about 45° off — so a 2×2 matrix maps sensor tilt onto screen X/Y.
+2. Rotates those into screen axes. The sensor rarely sits square to the handle's push directions, so a 2×2 matrix maps sensor tilt onto screen X/Y. In one earlier enclosure the offset was about 45°; calibration measures whatever it actually is.
 3. Applies a per-direction gain, because handle travel is rarely symmetric. Calibration normalises each of the four directions so a full push reaches 1.0.
 4. Applies a deadzone, then scales to cursor pixels.
 5. Checks the magnet. The reading is the magnitude of the field's change from rest across all three axes — direction-free, so it can only gate, never steer. It uses hysteresis (on at `magOn`, off at the lower `magOff`) so a light push doesn't flicker in and out.
@@ -87,7 +93,9 @@ Full calibration is **not** a startup routine. Once a unit is set up, the stored
 
 `/web/index.html` — a single static page, no build step, no dependencies. Serve it anywhere (GitHub Pages works) and open it in **Chrome or Edge**. WebHID is unsupported in Safari and Firefox.
 
-It connects over raw HID alongside the mouse interface, so the device keeps working as a mouse the whole time. It offers:
+The device exposes a second, vendor-defined HID interface for this, separate from the mouse interface, so it keeps working as a mouse the whole time the page is connected. Both interfaces may show up under the same name in Chrome's device picker — the one that opens without an error is the right one.
+
+The page offers:
 
 - live magnet, tilt and cursor-vector readouts, with the gate thresholds drawn on the magnet bar
 - a step-by-step calibration wizard that waits for you rather than running on timers
