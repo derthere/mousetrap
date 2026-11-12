@@ -217,7 +217,7 @@ function send(bytes){
   if(!device) return Promise.resolve();
   const buf = new Uint8Array(RAW_SIZE);
   buf.set(bytes.slice(0, RAW_SIZE));
-  return device.sendReport(RID, buf).catch(e => log("send failed: "+e.message));
+  return device.sendReport(RID, buf).catch(e => console.error("send failed:", e));
 }
 function cmd(op, payload = []){ return send([op, ...payload]); }
 function expect(code, ms = 4000){
