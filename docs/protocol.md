@@ -158,6 +158,7 @@ Streamed at ~20 Hz while streaming is enabled. Not a reply — it arrives unsoli
 | 26 | f32 | cursor `moveY` |
 | 30 | f32 | encoder count |
 | 34 | 3 × f32 | raw accelerometer `x y z` |
+| 46 | 3 × f32 | magnetometer `x y z` relative to rest, µT (zero on older firmware) |
 
 Flags bitfield:
 
