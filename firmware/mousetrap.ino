@@ -32,7 +32,7 @@ void onDeviceCalibration();   // defined at the bottom
 
 // Declared up here because the IDE auto-generates prototypes at the top of
 // the file; a type used in a return position must already be known.
-struct Sample { float dX, dY, mag, rawAX, rawAY, rawAZ; };
+struct Sample { float dX, dY, mag, rawAX, rawAY, rawAZ, mX, mY, mZ; };
 
 // ================= USB HID =================
 
@@ -140,6 +140,7 @@ Sample readSensor() {
   s.dY = s.rawAY - restAccY;
   float mx = m.magnetic.x - restMagX, my = m.magnetic.y - restMagY, mz = m.magnetic.z - restMagZ;
   s.mag = sqrt(mx * mx + my * my + mz * mz);
+  s.mX = mx;  s.mY = my;  s.mZ = mz;   // field components relative to rest, uT
   return s;
 }
 
@@ -502,6 +503,7 @@ void loop() {
     pf(b, j, (float)moveX); pf(b, j, (float)moveY);
     pf(b, j, (float)encRead());
     pf(b, j, s.rawAX); pf(b, j, s.rawAY); pf(b, j, s.rawAZ);
+    pf(b, j, s.mX);    pf(b, j, s.mY);    pf(b, j, s.mZ);      // bytes 46-57
     send(b);
   }
 

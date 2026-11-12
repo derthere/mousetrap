@@ -139,6 +139,18 @@
           <label>Tilt Y <b id="dyV">0.00</b></label>
           <div class="bar"><i id="dyB" style="left:50%;width:0"></i></div>
         </div>
+        <div class="meter">
+          <label>Mag X <b id="mxV">0.0</b></label>
+          <div class="bar"><i id="mxB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="meter">
+          <label>Mag Y <b id="myV">0.0</b></label>
+          <div class="bar"><i id="myB" style="left:50%;width:0"></i></div>
+        </div>
+        <div class="meter">
+          <label>Mag Z <b id="mzV">0.0</b></label>
+          <div class="bar"><i id="mzB" style="left:50%;width:0"></i></div>
+        </div>
         <div class="row" style="margin-top:18px">
           <span class="pill" id="pGrip">moving</span>
           <span class="pill" id="pL">left</span>
@@ -192,8 +204,11 @@
     <pre id="diag">—</pre>
     <div class="row" style="margin-top:14px">
       <button id="copy">Copy diagnostics</button>
+      <button id="recBtn">Record 10 s</button>
     </div>
     <p class="note">If something isn’t working, copy this and send it over.</p>
+    <p class="note"><b>Magnet test:</b> press Record, then push slowly to full and back in each direction &mdash; up, down, left, right &mdash; pausing at centre between each. The readings are copied to your clipboard as CSV, with a summary below.</p>
+    <pre id="recOut" style="display:none"></pre>
   </div>
 
 </div>
@@ -297,13 +312,23 @@ function setStatus(on, text){ $("dot").classList.toggle("on", on); $("statusText
 
 /* ---------- live ---------- */
 let last = null;
+let magScale = 1;
 function renderState(dv){
   const flags = dv.getUint8(1);
-  const v = floats(dv, 2, 11);
+  const v = floats(dv, 2, 14);   // v[11..13] are 0 on older firmware
   const st = { grip:!!(flags&1), left:!!(flags&2), right:!!(flags&4), cal:!!(flags&8),
                dX:v[0], dY:v[1], mag:v[2], sx:v[3], sy:v[4],
-               moveX:v[5], moveY:v[6], enc:v[7], aX:v[8], aY:v[9], aZ:v[10] };
+               moveX:v[5], moveY:v[6], enc:v[7], aX:v[8], aY:v[9], aZ:v[10],
+               mX:v[11], mY:v[12], mZ:v[13] };
   last = st;
+  if(rec) rec.push([performance.now() - recT0, st]);
+
+  // magnet components: bars auto-scale to the largest value seen this session
+  magScale = Math.max(magScale, Math.abs(st.mX), Math.abs(st.mY), Math.abs(st.mZ));
+  for(const [id, val] of [["mx", st.mX], ["my", st.mY], ["mz", st.mZ]]){
+    $(id+"V").textContent = val.toFixed(1);
+    bar(id, val, magScale);
+  }
 
   $("magV").textContent = st.mag.toFixed(2);
   $("magB").style.width = Math.min(100, st.mag/20*100) + "%";
@@ -321,8 +346,8 @@ function renderState(dv){
   $("pR").classList.toggle("on", st.right);
   $("pEnc").textContent = "enc " + st.enc;
 }
-function bar(id, val){
-  const pct = Math.max(-1, Math.min(1, val/4)) * 50;
+function bar(id, val, scale = 4){
+  const pct = Math.max(-1, Math.min(1, val/scale)) * 50;
   const el = $(id+"B");
   if(pct >= 0){ el.style.left = "50%"; el.style.width = pct + "%"; }
   else { el.style.left = (50+pct) + "%"; el.style.width = (-pct) + "%"; }
@@ -464,6 +489,41 @@ SLIDERS.forEach(([s,o,key,fmt]) => {
   });
 });
 
+/* ---------- magnet test recorder ---------- */
+let rec = null, recT0 = 0;
+function recStart(){
+  if(!device) return;
+  rec = []; recT0 = performance.now();
+  const b = $("recBtn"); let left = 10;
+  b.disabled = true; b.textContent = "Recording… 10";
+  const tick = setInterval(() => { left--; b.textContent = "Recording… " + left; }, 1000);
+  setTimeout(() => { clearInterval(tick); recFinish(); }, 10000);
+}
+function recFinish(){
+  const rows = rec; rec = null;
+  const b = $("recBtn"); b.disabled = false; b.textContent = "Record 10 s";
+  if(!rows.length){ $("recOut").style.display = "block"; $("recOut").textContent = "No samples. Is the device connected and streaming?"; return; }
+  const head = "t_ms,dX,dY,mag,mX,mY,mZ,grip";
+  const csv = [head].concat(rows.map(([t, s]) =>
+    [t.toFixed(0), s.dX, s.dY, s.mag, s.mX, s.mY, s.mZ, s.grip ? 1 : 0]
+      .map(v => typeof v === "number" ? +v.toFixed(3) : v).join(","))).join("\n");
+  navigator.clipboard.writeText(csv).catch(() => {});
+  const col = k => rows.map(r => r[1][k]);
+  const rng = k => { const a = col(k); return `${Math.min(...a).toFixed(1)} .. ${Math.max(...a).toFixed(1)}`; };
+  // how much each magnet axis wiggles while the handle is at rest (gate closed)
+  const rest = rows.filter(r => !r[1].grip).map(r => r[1]);
+  const sd = k => { if(rest.length < 3) return "—"; const a = rest.map(s => s[k]);
+    const m = a.reduce((x,y)=>x+y,0)/a.length; return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/a.length).toFixed(2); };
+  const noMag = rows.every(([, s]) => s.mX === 0 && s.mY === 0 && s.mZ === 0);
+  $("recOut").style.display = "block";
+  $("recOut").textContent =
+`${rows.length} samples copied as CSV${noMag ? "  (magnet axes are all zero: flash the latest firmware)" : ""}
+
+range       mX ${rng("mX")}   mY ${rng("mY")}   mZ ${rng("mZ")}   (uT)
+rest noise  mX ${sd("mX")}   mY ${sd("mY")}   mZ ${sd("mZ")}   (std dev, gate closed)
+tilt range  dX ${rng("dX")}   dY ${rng("dY")}   (m/s^2, for comparison)`;
+}
+
 /* ---------- diagnostics ---------- */
 function updateDiag(){
   if(!calInfo) return;
@@ -482,6 +542,7 @@ trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}
 
 live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
 accel raw  ${last ? `${n(last.aX,2)} ${n(last.aY,2)} ${n(last.aZ,2)}` : "—"}
+mag axes   ${last ? `${n(last.mX,1)} ${n(last.mY,1)} ${n(last.mZ,1)}` : "—"}
 browser    ${navigator.userAgent}`;
 }
 const n = (v,d=3) => (typeof v === "number" ? v.toFixed(d) : "—");
@@ -508,6 +569,7 @@ $("defaults").onclick = async () => {
     fillSettings();
   }catch(e){}
 };
+$("recBtn").onclick = recStart;
 $("copy").onclick = () => {
   navigator.clipboard.writeText($("diag").textContent).then(() => {
     const b = $("copy"); b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy diagnostics", 1400);
