@@ -39,6 +39,12 @@
 #define EURO_BETA        0.4    // Higher = less lag on fast moves
 #define EURO_D_CUTOFF    1.0
 #define GATE_RAMP_MS     60     // cursor eases in over this long after the magnet gate opens
+// Plateau curve (TrackPoint-style, Selker & Rutledge): soft ramp, then a wide
+// band of steady speed for normal pushes, then a rise to top speed at full push.
+#define PLATEAU_START    0.25   // push fraction where the plateau begins
+#define PLATEAU_END      0.70   // ...and ends
+#define NEG_INERTIA      0.4    // plateau mode only: exaggerate speed changes so starts/stops feel crisp; 0 = off
+#define NEG_INERTIA_TAU  0.10   // seconds
 #define REBOUND_MS       120    // a direction reversal must sit in the deadzone this long first; 0 = off
 #define RECENTRE_RATE    0.002  // per loop, while hands-off: slowly re-zero drifting rest values
 
@@ -124,16 +130,37 @@ struct Settings {
   float trimUp, trimDown, trimLeft, trimRight;
   int16_t scrollStep;
   uint16_t buttonQuietMs;
+  float curve;      // 0 = power curve, 1 = plateau curve
+  float plateau;    // plateau speed as a fraction of top speed
 };
 struct Store { uint16_t magic; Cal cal; Settings set; };
 
 const uint16_t STORE_MAGIC = 0xCA1E;
 const Cal      DEF_CAL = { -0.252, 0.571, 0.945, 0.270, 0.65, 2.1, 0.97, 1.03, 4.0, 3.0, 0, 0, 0 };
-const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150 };
+const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25 };
+
 
 Cal cal = DEF_CAL;
 Settings set = DEF_SET;
 bool calValid = false;
+
+// Settings saved by older firmware end before these fields, so whatever sits
+// in flash there is garbage. Pull anything out of range back to defaults.
+void sanitizeSettings() {
+  if (!(set.curve == 0 || set.curve == 1)) set.curve = 0;
+  if (!(set.plateau >= 0.1f && set.plateau <= 0.8f)) set.plateau = DEF_SET.plateau;
+}
+
+float smoothstep01(float x) { x = constrain(x, 0.0f, 1.0f); return x * x * (3 - 2 * x); }
+
+// Push fraction t (0 at deadzone edge, 1 at calibrated full push) -> fraction of top speed.
+float plateauCurve(float t) {
+  float P = set.plateau;
+  if (t < PLATEAU_START) return P * smoothstep01(t / PLATEAU_START);
+  if (t < PLATEAU_END)   return P;
+  if (t <= 1.0f)         return P + (1 - P) * smoothstep01((t - PLATEAU_END) / (1 - PLATEAU_END));
+  return t;                                    // past full push: keep rising gently
+}
 
 void saveStore() {
   Store s = { STORE_MAGIC, cal, set };
@@ -271,6 +298,7 @@ void sendSettings() {
   pf(b, i, set.trimUp); pf(b, i, set.trimDown);
   pf(b, i, set.trimLeft); pf(b, i, set.trimRight);
   pf(b, i, (float)set.scrollStep); pf(b, i, (float)set.buttonQuietMs);
+  pf(b, i, set.curve); pf(b, i, set.plateau);
   send(b);
 }
 
@@ -307,6 +335,8 @@ void handleCommand() {
       set.trimLeft = uf(c, i); set.trimRight = uf(c, i);
       set.scrollStep = (int16_t)uf(c, i);
       set.buttonQuietMs = (uint16_t)uf(c, i);
+      set.curve = uf(c, i);  set.plateau = uf(c, i);   // 0s from an older page
+      sanitizeSettings();
       sendSettings();
       break;
     }
@@ -436,6 +466,7 @@ void setup() {
   Store s;
   EEPROM.get(0, s);
   if (s.magic == STORE_MAGIC) { cal = s.cal; set = s.set; calValid = true; }
+  sanitizeSettings();
 
   delay(1000);
   baseline();                 // hands off the handle for ~3 s after plug-in
@@ -520,9 +551,20 @@ void loop() {
   float r = sqrt(sx * sx + sy * sy);
   float vx = 0, vy = 0;                       // px/s
   float dz = constrain(set.deadzone, 0.0f, 0.9f);
+  float t = (r > dz) ? constrain((r - dz) / (1.0f - dz), 0.0f, MAX_PUSH) : 0;
+  float frac;                                 // fraction of top speed
+  if (set.curve == 1) {
+    frac = plateauCurve(t);
+    // Negative inertia: add a bit of the difference between the speed now and
+    // its recent average, so the cursor gets going (and stops) promptly.
+    static float lagged = 0;
+    lagged += (frac - lagged) * constrain(dt / NEG_INERTIA_TAU, 0.0f, 1.0f);
+    if (frac > 0) frac = constrain(frac + NEG_INERTIA * (frac - lagged), 0.0f, MAX_PUSH);
+  } else {
+    frac = pow(t, CURVE_EXP);
+  }
   if (r > dz) {
-    float t = constrain((r - dz) / (1.0f - dz), 0.0f, MAX_PUSH);
-    float pxs = set.speed * PX_PER_S_PER_SPEED * pow(t, CURVE_EXP);
+    float pxs = set.speed * PX_PER_S_PER_SPEED * frac;
     vx = sx / r * pxs;
     vy = sy / r * pxs;
   }
