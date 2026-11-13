@@ -82,6 +82,14 @@
   .prompt .small{font-size:14px;color:var(--dim);margin:0}
   .prompt .prog{height:6px;border-radius:3px;background:var(--line);margin-top:14px;overflow:hidden}
   .prompt .prog i{display:block;height:100%;width:0;background:var(--btn);transition:width .1s linear}
+  .sq{margin-top:20px;border-top:1px solid var(--line);padding-top:18px}
+  .sq h3{font-size:15px;margin:0 0 6px}
+  .sqwrap{position:relative;max-width:520px;margin:14px auto 0;aspect-ratio:1;cursor:crosshair}
+  .sqwrap canvas{width:100%;height:100%;display:block;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+  table.bal{border-collapse:collapse;margin-top:14px;font-size:14px;width:100%}
+  table.bal td,table.bal th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  table.bal th{font-weight:600;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  table.bal td.num{font-family:var(--mono);text-align:right}
   .result{padding:12px 14px;border-radius:8px;margin-top:16px;font-size:14px;border:1px solid}
   .result.ok{border-color:var(--ok);color:var(--ok)}
   .result.bad{border-color:var(--bad);color:var(--bad)}
@@ -194,6 +202,24 @@
       <button id="calCancel" class="hide">Cancel</button>
     </div>
     <div id="calMsg" class="result hide"></div>
+
+    <div class="sq">
+      <h3>Fine-tune: trace a square</h3>
+      <p class="note" style="margin:0">
+        Evens out the speed in each direction after calibration. Using mousetrap, move the cursor
+        onto the green dot, then trace the square clockwise, twice round. Push with the
+        <b>same comfortable pressure on every side</b> and don't correct for speed: that's
+        what it measures. Your curve and axis snap are switched off during the test and put back after.
+      </p>
+      <div class="row" style="margin-top:14px">
+        <button id="sqStart">Start square test</button>
+        <button id="sqApply" class="hide">Apply</button>
+        <button id="sqCancel" class="hide">Cancel</button>
+        <button id="sqReset">Reset fine-tune</button>
+      </div>
+      <div class="sqwrap hide" id="sqWrap"><canvas id="sqCanvas"></canvas></div>
+      <div id="sqOut"></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -519,6 +545,8 @@ async function calCompute(){
       showCal(true, `Saved. Magnet margin ${v[4].toFixed(1)}×` +
         (v[4] < 1.8 ? " — thin, but usable. Movement may feel hesitant on the weakest side." : " — good."));
       cueGood();
+      if(settings){ Object.assign(settings, {trimUp:1, trimDown:1, trimLeft:1, trimRight:1}); pushSettings();
+        $("calMsg").textContent += " Fine-tune reset; run the square test below to even out the directions."; }
       await cmd(C.GET_CAL);
       const c = await expect(R.CAL);
       const cv = floats(c, 2, 11);
@@ -542,6 +570,161 @@ function resetCalUI(){
   $("calPrompt").classList.add("hide");
 }
 async function calCancel(){ calRun++; await cmd(C.CAL_ABORT); try{ await expect(R.RESULT); }catch(e){} resetCalUI(); }
+
+/* ---------- fine-tune: square test ---------- */
+// The person traces a square clockwise with the same comfortable pressure on every
+// side. With the power curve (monotonic) and axis snap off, cursor speed along each
+// side tells us how strongly that direction responds to the same effort. We then
+// rescale each direction's trim so they all give the mean speed.
+const SQ = { DIRS:["right","down","left","up"], TRIM:{right:"trimRight", down:"trimDown", left:"trimLeft", up:"trimUp"},
+             NEED_LAPS:1.6,       // clean distance per side, in side lengths (corners are skipped, so ~2 laps)
+             BAND:0.09,           // how far off the line still counts (fraction of canvas)
+             CORNER:0.07,         // ignore this close to corners (turning)
+             MIN_PX_S:20 };       // ignore pauses
+let sq = null;   // running test state
+
+function sqGeom(){
+  const c = $("sqCanvas"), r = c.getBoundingClientRect();
+  const W = r.width, m = W * 0.18;
+  return { c, r, W, a:m, b:W - m };   // square from (a,a) to (b,b), CSS px
+}
+function sqDraw(){
+  const { c, W, a, b } = sqGeom(), dpr = devicePixelRatio || 1;
+  c.width = W * dpr; c.height = W * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, W);
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  // progress per side
+  const sides = [[a,a,b,a],[b,a,b,b],[b,b,a,b],[a,b,a,a]];
+  sides.forEach(([x1,y1,x2,y2], i) => {
+    const d = SQ.DIRS[i], frac = sq ? Math.min(1, sq.dist[d] / (SQ.NEED_LAPS * (b - a))) : 0;
+    g.lineWidth = 10; g.lineCap = "round";
+    g.strokeStyle = css("--line"); g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+    if(frac > 0){ g.strokeStyle = css("--btn"); g.beginPath(); g.moveTo(x1,y1);
+      g.lineTo(x1 + (x2-x1)*frac, y1 + (y2-y1)*frac); g.stroke(); }
+    // arrow
+    const mx = (x1+x2)/2, my = (y1+y2)/2, ang = Math.atan2(y2-y1, x2-x1);
+    g.save(); g.translate(mx, my); g.rotate(ang); g.fillStyle = css("--dim");
+    g.beginPath(); g.moveTo(9,0); g.lineTo(-6,-7); g.lineTo(-6,7); g.closePath(); g.fill(); g.restore();
+  });
+  // start dot
+  g.fillStyle = css("--ok"); g.beginPath(); g.arc(a, a, 11, 0, Math.PI*2); g.fill();
+  // trail
+  if(sq && sq.trail.length > 1){
+    g.strokeStyle = css("--accent"); g.lineWidth = 2; g.beginPath();
+    sq.trail.forEach(([x,y], i) => i ? g.lineTo(x,y) : g.moveTo(x,y)); g.stroke();
+  }
+}
+function sqSideAt(x, y){
+  const { W, a, b } = sqGeom(), band = SQ.BAND * W, corner = SQ.CORNER * W;
+  const near = (v, t) => Math.abs(v - t) <= band;
+  const inside = (v) => v >= a + corner && v <= b - corner;
+  if(near(y, a) && inside(x)) return "right";
+  if(near(x, b) && inside(y)) return "down";
+  if(near(y, b) && inside(x)) return "left";
+  if(near(x, a) && inside(y)) return "up";
+  return null;
+}
+async function sqStart(){
+  if(!device || !settings || !calInfo?.valid){ $("sqOut").innerHTML = `<div class="result bad">Connect and calibrate first.</div>`; return; }
+  try{ audio = audio || new (window.AudioContext || window.webkitAudioContext)(); await audio.resume(); }catch(e){}
+  sq = { saved:{...settings}, started:false, pos:null, lastTick:null, trail:[],
+         dist:{right:0,down:0,left:0,up:0}, samples:{right:[],down:[],left:[],up:[]} };
+  // clean measuring conditions
+  Object.assign(settings, { curve:0, axisSnap:0, crisp:0 }); pushSettings();
+  $("sqWrap").classList.remove("hide"); $("sqOut").innerHTML = "";
+  $("sqStart").classList.add("hide"); $("sqApply").classList.add("hide");
+  $("sqCancel").classList.remove("hide"); $("sqReset").classList.add("hide");
+  sqDraw();
+  $("sqOut").innerHTML = `<p class="note">Move the cursor onto the green dot to begin.</p>`;
+}
+function sqStop(restore = true){
+  if(!sq) return;
+  if(restore){ Object.assign(settings, { curve:sq.saved.curve, axisSnap:sq.saved.axisSnap, crisp:sq.saved.crisp }); pushSettings(); fillSettings(); }
+  sq.done = true;
+  $("sqStart").classList.remove("hide"); $("sqStart").textContent = "Run square test again";
+  $("sqCancel").classList.add("hide"); $("sqReset").classList.remove("hide");
+}
+function sqCancel(){ sqStop(true); sq = null; $("sqWrap").classList.add("hide"); $("sqOut").innerHTML = ""; }
+
+$("sqCanvas").addEventListener("pointermove", e => {
+  if(!sq || sq.done) return;
+  const { r, a } = sqGeom(), x = e.clientX - r.left, y = e.clientY - r.top;
+  sq.pos = [x, y];
+  if(!sq.started && Math.hypot(x - a, y - a) < 16){
+    sq.started = true; sq.lastTick = null; beep(990, 80);
+    $("sqOut").innerHTML = `<p class="note">Go! Clockwise, steady pressure. The sides fill in blue as they're measured.</p>`;
+  }
+});
+// sample at the stream rate: pointer displacement since last tick + the device's push at that moment
+function sqTick(){
+  if(!sq || sq.done || !sq.started || !sq.pos || !last) return;
+  const now = performance.now(), [x, y] = sq.pos;
+  sq.trail.push([x, y]); if(sq.trail.length > 600) sq.trail.shift();
+  if(sq.lastTick){
+    const [px, py, pt] = sq.lastTick, dt = (now - pt) / 1000;
+    const dx = x - px, dy = y - py, v = Math.hypot(dx, dy) / dt;
+    const side = sqSideAt((x+px)/2, (y+py)/2);
+    const r = Math.hypot(last.sx, last.sy);
+    if(side && v >= SQ.MIN_PX_S && dt > 0 && dt < 0.2){
+      // direction check: must be moving roughly along the side, the right way
+      const want = { right:[1,0], down:[0,1], left:[-1,0], up:[0,-1] }[side];
+      const along = (dx*want[0] + dy*want[1]) / Math.hypot(dx, dy);
+      if(along > 0.7){
+        const angle = Math.atan2(dx*want[1]*-1 + dy*want[0], dx*want[0] + dy*want[1]) * 180 / Math.PI;  // + = drifting clockwise
+        sq.samples[side].push({ v, r, angle });
+        sq.dist[side] += v * dt;
+      }
+    }
+  }
+  sq.lastTick = [x, y, now];
+  sqDraw();
+  const { a, b } = sqGeom();
+  if(SQ.DIRS.every(d => sq.dist[d] >= SQ.NEED_LAPS * (b - a))) sqFinish();
+}
+const median = a => { const b = [...a].sort((p,q)=>p-q), m = b.length >> 1; return b.length ? (b.length % 2 ? b[m] : (b[m-1]+b[m])/2) : NaN; };
+function sqFinish(){
+  const res = {}, dz = settings.deadzone, EXP = 2.2;
+  SQ.DIRS.forEach(d => {
+    const S = sq.samples[d];
+    res[d] = { v: median(S.map(s => s.v)), r: median(S.map(s => s.r)), angle: median(S.map(s => s.angle)) };
+  });
+  const vMean = Math.exp(SQ.DIRS.reduce((t, d) => t + Math.log(res[d].v), 0) / 4);   // geometric mean
+  SQ.DIRS.forEach(d => {
+    const R = res[d], t = Math.max(0.02, (R.r - dz) / (1 - dz));
+    const tNeed = t * Math.pow(vMean / R.v, 1 / EXP);       // invert the power curve
+    const rNeed = dz + tNeed * (1 - dz);
+    R.factor = Math.min(1.6, Math.max(0.6, rNeed / R.r));
+    R.newTrim = Math.min(2, Math.max(0.5, sq.saved[SQ.TRIM[d]] * R.factor));
+  });
+  sq.res = res; sqStop(true); cueDone();
+  const worstAng = Math.max(...SQ.DIRS.map(d => Math.abs(res[d].angle)));
+  const snapNote = worstAng > (sq.saved.axisSnap || 0)
+    ? `Some sides drift up to ${worstAng.toFixed(0)}° off line; axis snap is ${sq.saved.axisSnap || 0}°. Consider raising it to about ${Math.min(25, Math.ceil(worstAng + 2))}°.`
+    : `Sides drift at most ${worstAng.toFixed(0)}° off line, which your ${sq.saved.axisSnap}° axis snap already straightens.`;
+  $("sqOut").innerHTML = `
+    <table class="bal"><tr><th>Side</th><th style="text-align:right">Speed vs average</th><th style="text-align:right">Off line</th><th style="text-align:right">Change</th></tr>
+    ${SQ.DIRS.map(d => { const R = res[d];
+      return `<tr><td>${d}</td><td class="num">${Math.round(R.v / vMean * 100)}%</td><td class="num">${R.angle >= 0 ? "+" : ""}${R.angle.toFixed(1)}°</td>
+              <td class="num">${R.factor >= 1 ? "+" : ""}${Math.round((R.factor - 1) * 100)}%</td></tr>`; }).join("")}
+    </table>
+    <p class="note">${snapNote}</p>
+    <p class="note">Apply sets the new balance live; then trace again to check, and press <b>Save to device</b> in Feel to keep it.</p>`;
+  $("sqApply").classList.remove("hide");
+}
+function sqApply(){
+  if(!sq?.res) return;
+  SQ.DIRS.forEach(d => settings[SQ.TRIM[d]] = sq.res[d].newTrim);
+  pushSettings(); cueGood();
+  $("sqApply").classList.add("hide");
+  $("sqOut").insertAdjacentHTML("beforeend", `<div class="result ok">Applied. Run it again to check, then Save to device.</div>`);
+}
+function sqReset(){
+  if(!settings) return;
+  Object.assign(settings, {trimUp:1, trimDown:1, trimLeft:1, trimRight:1}); pushSettings();
+  $("sqOut").innerHTML = `<div class="result ok">Fine-tune reset to even. Save to device to keep it.</div>`;
+}
+setInterval(sqTick, 50);
+addEventListener("resize", () => { if(sq) sqDraw(); });
 
 /* ---------- settings ---------- */
 const SLIDERS = [
@@ -590,7 +773,8 @@ function pushSettings(){
   clearTimeout(pushTimer);
   pushTimer = setTimeout(async () => {
     const p = [...f32(settings.deadzone), ...f32(settings.speed),
-               ...f32(1), ...f32(1), ...f32(1), ...f32(1),   // trims retired: calibration gains handle balance
+               ...f32(settings.trimUp), ...f32(settings.trimDown),     // set by the square test
+               ...f32(settings.trimLeft), ...f32(settings.trimRight),
                ...f32(settings.scroll), ...f32(settings.quiet),
                ...f32(settings.curve), ...f32(settings.plateau),
                ...f32(settings.rampEnd), ...f32(settings.boostStart), ...f32(settings.crisp),
@@ -658,6 +842,7 @@ gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.g
 magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
 
 curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  ramp ${n(s.rampEnd,2)}  boost ${n(s.boostStart,2)}  crisp ${n(s.crisp,1)}` : "power"}
+fine-tune  up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
 speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  axis snap ${n(s.axisSnap,0)}°  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
 
 live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
@@ -673,6 +858,10 @@ $("connect").onclick = connect;
 $("disconnect").onclick = disconnect;
 $("calStart").onclick = calStart;
 $("calCancel").onclick = calCancel;
+$("sqStart").onclick = sqStart;
+$("sqCancel").onclick = sqCancel;
+$("sqApply").onclick = sqApply;
+$("sqReset").onclick = sqReset;
 $("save").onclick = async () => {
   await cmd(C.SAVE); try{ await expect(R.RESULT); }catch(e){}
   const b = $("save"); b.textContent = "Saved"; setTimeout(() => b.textContent = "Save to device", 1400);
