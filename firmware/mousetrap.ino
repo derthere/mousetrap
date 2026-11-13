@@ -16,8 +16,8 @@
 #define PROTO_VERSION 1
 
 // ---- Pins (GPIO numbers) ----
-#define LEFT_CLICK_PIN  4
-#define RIGHT_CLICK_PIN 3
+#define LEFT_CLICK_PIN  3   // swapped Nov 2026: physical left switch is on GPIO 3
+#define RIGHT_CLICK_PIN 4
 #define ENC_A 6
 #define ENC_B 5
 #define PRESSED HIGH        // LOW if switches are wired COM->GND, NO->pin
@@ -35,7 +35,7 @@
 #define CURVE_EXP        2.2    // response curve: 1 = linear, higher = finer near centre
 #define MAX_PUSH         1.15   // calibrated full push = 1.0; allow a little past it
 // One Euro filter: smooth when nearly still, near-zero lag when moving fast.
-#define EURO_MIN_CUTOFF  1.5    // Hz. Lower = steadier hold, more lag on slow moves
+#define EURO_MIN_CUTOFF  2.5    // Hz. Lower = steadier hold, more lag on slow moves (1.5 rounded off small circles)
 #define EURO_BETA        0.4    // Higher = less lag on fast moves
 #define EURO_D_CUTOFF    1.0
 #define GATE_RAMP_MS     60     // cursor eases in over this long after the magnet gate opens
@@ -44,6 +44,7 @@
 // Its shape (ramp end, boost start, crispness) is set from the web page.
 #define NEG_INERTIA_TAU  0.10   // seconds
 #define REBOUND_MS       120    // a direction reversal must sit in the deadzone this long first; 0 = off
+#define REBOUND_MIN_PEAK 0.5    // ...but only after a push that went past this fraction of full
 #define RECENTRE_RATE    0.002  // per loop, while hands-off: slowly re-zero drifting rest values
 
 void onDeviceCalibration();   // defined at the bottom
@@ -580,14 +581,22 @@ void loop() {
   // briefly tilts the other way, which flicked the cursor backwards. A
   // reversal (>90 deg from the last direction) is only accepted once the
   // push has rested inside the deadzone for REBOUND_MS.
-  static float lastDirX = 0, lastDirY = 0;
+  // Only armed after a push that went past REBOUND_MIN_PEAK: small pushes
+  // can't build a real swing-back, and tight circles at the deadzone edge
+  // were being chopped up by the guard.
+  static float lastDirX = 0, lastDirY = 0, excursionPeak = 0;
+  static bool reboundArmed = false;
   static unsigned long inDeadzoneSince = 0, blockedSince = 0;
   if (r <= dz) {
-    if (inDeadzoneSince == 0) inDeadzoneSince = millis();
+    if (inDeadzoneSince == 0) {
+      inDeadzoneSince = millis();
+      reboundArmed = excursionPeak >= REBOUND_MIN_PEAK;
+      excursionPeak = 0;
+    }
     blockedSince = 0;
   } else {
     bool settled = inDeadzoneSince && millis() - inDeadzoneSince >= REBOUND_MS;
-    bool reversal = (sx * lastDirX + sy * lastDirY) < 0;
+    bool reversal = reboundArmed && (sx * lastDirX + sy * lastDirY) < 0;
     if (reversal && !settled && blockedSince == 0) blockedSince = millis();
     bool timedOut = blockedSince && millis() - blockedSince >= REBOUND_MS;  // deliberate reversal held
     if (REBOUND_MS > 0 && reversal && !settled && !timedOut) {
@@ -595,6 +604,8 @@ void loop() {
     } else {
       lastDirX = sx / r;  lastDirY = sy / r;
       inDeadzoneSince = 0;  blockedSince = 0;
+      reboundArmed = false;
+      if (t > excursionPeak) excursionPeak = t;
     }
   }
   if (inDeadzoneSince && millis() - inDeadzoneSince > 400) lastDirX = lastDirY = 0;  // long rest: forget direction

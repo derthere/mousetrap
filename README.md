@@ -21,8 +21,8 @@ The handle sits on a sprung mount over a fixed magnet. Pushing it tilts an IMU, 
 Edit these at the top of the sketch if your wiring differs. They are **GPIO numbers**, which do not match the silkscreen-to-GPIO mapping of the ATmega32U4 Pro Micro — if you're porting from one, re-check them.
 
 ```
-LEFT_CLICK_PIN   4
-RIGHT_CLICK_PIN  3
+LEFT_CLICK_PIN   3
+RIGHT_CLICK_PIN  4
 ENC_A            6
 ENC_B            5
 ```
