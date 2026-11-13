@@ -29,7 +29,7 @@
 #define SCROLL_QUIET_MS 250
 // Signal changes per physical click of the scroll knob (EC11-type: usually 4,
 // some are 2). Watch "enc" on the setup page while turning one click to check.
-#define ENC_COUNTS_PER_DETENT 4
+#define ENC_COUNTS_PER_DETENT 1   // this build's knob: one count per click
 
 // ---- Motion feel ----
 // All tunable from here; the web page's "speed" slider still scales the top speed.
