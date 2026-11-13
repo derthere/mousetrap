@@ -84,6 +84,9 @@
   /* settings */
   .set{display:grid;grid-template-columns:130px 1fr 60px;gap:12px;align-items:center;margin-bottom:12px}
   .set label{font-size:14px}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1}
+  .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .set output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--dim)}
   input[type=range]{width:100%;accent-color:var(--accent)}
   pre{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:12px;
@@ -185,7 +188,12 @@
   <div class="panel">
     <h2>Feel</h2>
     <div class="set"><label for="sSpeed">Speed</label><input type="range" id="sSpeed" min="5" max="60" step="1"><output id="oSpeed"></output></div>
-    <div class="set"><label for="sCurve">Curve</label><input type="range" id="sCurve" min="0" max="1" step="1"><output id="oCurve"></output></div>
+    <div class="set"><label>Curve</label>
+      <div class="seg" id="curveSeg">
+        <button type="button" data-curve="0">Power</button>
+        <button type="button" data-curve="1">Plateau</button>
+      </div><output></output></div>
+    <p class="note" id="curveNote" style="margin:-4px 0 14px 142px"></p>
     <div class="set"><label for="sPlat">Plateau speed</label><input type="range" id="sPlat" min="0.1" max="0.8" step="0.05"><output id="oPlat"></output></div>
     <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
     <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
@@ -455,7 +463,6 @@ async function calCancel(){ await cmd(C.CAL_ABORT); try{ await expect(R.RESULT);
 /* ---------- settings ---------- */
 const SLIDERS = [
   ["sSpeed","oSpeed","speed", v=>v.toFixed(0)],
-  ["sCurve","oCurve","curve", v=>v >= 1 ? "plateau" : "power"],
   ["sPlat","oPlat","plateau", v=>Math.round(v*100)+"%"],
   ["sDead","oDead","deadzone", v=>v.toFixed(2)],
   ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
@@ -471,7 +478,24 @@ function fillSettings(){
     $(o).textContent = fmt(settings[key]);
   });
   sizeDeadzone();
+  showCurve();
 }
+const CURVE_NOTES = [
+  "Power: very fine near centre, building to full speed at full push.",
+  "Plateau: quick to a steady cruising speed for most pushes; full push goes faster. Set the cruise speed below.",
+];
+function showCurve(){
+  const c = settings && settings.curve >= 1 ? 1 : 0;
+  document.querySelectorAll("#curveSeg button").forEach(b => b.classList.toggle("on", +b.dataset.curve === c));
+  $("curveNote").textContent = CURVE_NOTES[c];
+  $("sPlat").disabled = c === 0;
+}
+document.querySelectorAll("#curveSeg button").forEach(b => b.addEventListener("click", () => {
+  if(!settings) return;
+  settings.curve = +b.dataset.curve;
+  showCurve();
+  pushSettings();
+}));
 let pushTimer = null;
 function pushSettings(){
   clearTimeout(pushTimer);
