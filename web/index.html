@@ -195,9 +195,9 @@
       <h3>Fine-tune: trace a square</h3>
       <p class="note" style="margin:0">
         Evens out the speed in each direction after calibration. Using mousetrap, move the cursor
-        onto the green dot, then trace the square clockwise, twice round. Push with the
+        onto the green dot, then trace the square clockwise, once round. Push with the
         <b>same comfortable pressure on every side</b> and don't correct for speed: that's
-        what it measures. Your curve and axis snap are switched off during the test and put back after.
+        what it measures. Your curve and line straightening are switched off during the test and put back after.
       </p>
       <div class="row" style="margin-top:14px">
         <button id="sqStart">Start square test</button>
@@ -220,11 +220,8 @@
       </div><output></output></div>
     <p class="note" id="curveNote" style="margin:-4px 0 14px 142px"></p>
     <div class="set"><label for="sPlat">Plateau speed</label><input type="range" id="sPlat" min="0.1" max="0.8" step="0.05"><output id="oPlat"></output></div>
-    <div class="set"><label for="sRamp">Ramp length</label><input type="range" id="sRamp" min="0.05" max="0.6" step="0.05"><output id="oRamp"></output></div>
     <div class="set"><label for="sBoost">Boost starts at</label><input type="range" id="sBoost" min="0.4" max="0.95" step="0.05"><output id="oBoost"></output></div>
-    <div class="set"><label for="sCrisp">Crispness</label><input type="range" id="sCrisp" min="0" max="1" step="0.1"><output id="oCrisp"></output></div>
     <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
-    <div class="set"><label for="sSnap">Axis snap</label><input type="range" id="sSnap" min="0" max="25" step="1"><output id="oSnap"></output></div>
     <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
     <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
     <div class="row" style="margin-top:16px">
@@ -553,8 +550,8 @@ async function calCancel(){ calRun++; await cmd(C.CAL_ABORT); try{ await expect(
 // side tells us how strongly that direction responds to the same effort. We then
 // rescale each direction's trim so they all give the mean speed.
 const SQ = { DIRS:["right","down","left","up"], TRIM:{right:"trimRight", down:"trimDown", left:"trimLeft", up:"trimUp"},
-             NEED_LAPS:1.6,       // clean distance per side, in side lengths (corners are skipped, so ~2 laps)
-             BAND:0.09,           // how far off the line still counts (fraction of canvas)
+             NEED_LAPS:0.6,       // clean distance per side, in side lengths (corners are skipped, so ~1 lap)
+             BAND:0.12,           // how far off the line still counts (fraction of canvas)
              CORNER:0.07,         // ignore this close to corners (turning)
              MIN_PX_S:20 };       // ignore pauses
 let sq = null;   // running test state
@@ -674,9 +671,9 @@ function sqFinish(){
   });
   sq.res = res; sqStop(true); cueDone();
   const worstAng = Math.max(...SQ.DIRS.map(d => Math.abs(res[d].angle)));
-  const snapNote = worstAng > (sq.saved.axisSnap || 0)
-    ? `Some sides drift up to ${worstAng.toFixed(0)}° off line; axis snap is ${sq.saved.axisSnap || 0}°. Consider raising it to about ${Math.min(25, Math.ceil(worstAng + 2))}°.`
-    : `Sides drift at most ${worstAng.toFixed(0)}° off line, which your ${sq.saved.axisSnap}° axis snap already straightens.`;
+  const snapNote = worstAng > FIXED.axisSnap
+    ? `Some sides drift up to ${worstAng.toFixed(0)}° off line, more than the ${FIXED.axisSnap}° the device straightens automatically. Recalibrating, pushing fully to the stop each way, usually fixes this.`
+    : `Sides drift at most ${worstAng.toFixed(0)}° off line, which the device straightens automatically.`;
   $("sqOut").innerHTML = `
     <table class="bal"><tr><th>Side</th><th style="text-align:right">Speed vs average</th><th style="text-align:right">Off line</th><th style="text-align:right">Change</th></tr>
     ${SQ.DIRS.map(d => { const R = res[d];
@@ -706,11 +703,8 @@ addEventListener("resize", () => { if(sq) sqDraw(); });
 const SLIDERS = [
   ["sSpeed","oSpeed","speed", v=>v.toFixed(0)],
   ["sPlat","oPlat","plateau", v=>Math.round(v*100)+"%"],
-  ["sRamp","oRamp","rampEnd", v=>Math.round(v*100)+"%"],
   ["sBoost","oBoost","boostStart", v=>Math.round(v*100)+"%"],
-  ["sCrisp","oCrisp","crisp", v=>v.toFixed(1)],
   ["sDead","oDead","deadzone", v=>v.toFixed(2)],
-  ["sSnap","oSnap","axisSnap", v=>v.toFixed(0)+"°"],
   ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
   ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
 ];
@@ -722,21 +716,21 @@ function fillSettings(){
   sizeDeadzone();
   showCurve();
 }
+// No longer user settings: the page always sends these values.
+const FIXED = { rampEnd:0.35, crisp:0, axisSnap:10 };
 // Older firmware sends 0s for fields it doesn't have.
 function plateauFields(v){
-  return { curve:v[8], plateau:v[9] || 0.25, rampEnd:v[10] || 0.35,
-           boostStart:v[11] || 0.85, crisp:v[12] || 0,
-           axisSnap: isNaN(v[13]) ? 10 : v[13] };
+  return { curve:v[8], plateau:v[9] || 0.25, boostStart:v[11] || 0.85, ...FIXED };
 }
 const CURVE_NOTES = [
   "Power: very fine near centre, building to full speed at full push.",
-  "Plateau: eases up to a steady cruising speed, holds it, then speeds up near full push. Shape it with the sliders below.",
+  "Plateau: eases up to a steady cruising speed, holds it, then speeds up near full push. Set the cruise speed and where the speed-up starts below.",
 ];
 function showCurve(){
   const c = settings && settings.curve >= 1 ? 1 : 0;
   document.querySelectorAll("#curveSeg button").forEach(b => b.classList.toggle("on", +b.dataset.curve === c));
   $("curveNote").textContent = CURVE_NOTES[c];
-  ["sPlat","sRamp","sBoost","sCrisp"].forEach(id => $(id).disabled = c === 0);
+  ["sPlat","sBoost"].forEach(id => $(id).disabled = c === 0);
 }
 document.querySelectorAll("#curveSeg button").forEach(b => b.addEventListener("click", () => {
   if(!settings) return;
@@ -782,9 +776,9 @@ rotation   XX ${n(c.XX)}  XY ${n(c.XY)}  YX ${n(c.YX)}  YY ${n(c.YY)}
 gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.gRight)}
 magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
 
-curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  ramp ${n(s.rampEnd,2)}  boost ${n(s.boostStart,2)}  crisp ${n(s.crisp,1)}` : "power"}
+curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  boost ${n(s.boostStart,2)}` : "power"}
 fine-tune  up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
-speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  axis snap ${n(s.axisSnap,0)}°  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
+speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
 
 live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
 accel raw  ${last ? `${n(last.aX,2)} ${n(last.aY,2)} ${n(last.aZ,2)}` : "—"}
