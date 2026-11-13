@@ -134,12 +134,13 @@ struct Settings {
   float rampEnd;    // push fraction where the soft ramp reaches the plateau
   float boostStart; // push fraction where speed starts rising above the plateau
   float crisp;      // negative inertia: exaggerate speed changes; 0 = off
+  float axisSnap;   // degrees: pushes this close to horizontal/vertical lock onto the axis
 };
 struct Store { uint16_t magic; Cal cal; Settings set; };
 
 const uint16_t STORE_MAGIC = 0xCA1E;
 const Cal      DEF_CAL = { -0.252, 0.571, 0.945, 0.270, 0.65, 2.1, 0.97, 1.03, 4.0, 3.0, 0, 0, 0 };
-const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25, 0.35, 0.85, 0.0 };
+const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25, 0.35, 0.85, 0.0, 10.0 };
 
 
 Cal cal = DEF_CAL;
@@ -155,6 +156,7 @@ void sanitizeSettings() {
   if (!(set.boostStart >= 0.4f && set.boostStart <= 0.98f)) set.boostStart = DEF_SET.boostStart;
   if (set.boostStart < set.rampEnd + 0.05f) set.boostStart = set.rampEnd + 0.05f;
   if (!(set.crisp >= 0 && set.crisp <= 1)) set.crisp = DEF_SET.crisp;
+  if (!(set.axisSnap >= 0 && set.axisSnap <= 25)) set.axisSnap = DEF_SET.axisSnap;
 }
 
 float smoothstep01(float x) { x = constrain(x, 0.0f, 1.0f); return x * x * (3 - 2 * x); }
@@ -306,6 +308,7 @@ void sendSettings() {
   pf(b, i, (float)set.scrollStep); pf(b, i, (float)set.buttonQuietMs);
   pf(b, i, set.curve); pf(b, i, set.plateau);
   pf(b, i, set.rampEnd); pf(b, i, set.boostStart); pf(b, i, set.crisp);
+  pf(b, i, set.axisSnap);
   send(b);
 }
 
@@ -344,6 +347,7 @@ void handleCommand() {
       set.buttonQuietMs = (uint16_t)uf(c, i);
       set.curve = uf(c, i);  set.plateau = uf(c, i);   // 0s from an older page
       set.rampEnd = uf(c, i);  set.boostStart = uf(c, i);  set.crisp = uf(c, i);
+      set.axisSnap = uf(c, i);
       sanitizeSettings();
       sendSettings();
       break;
@@ -550,6 +554,22 @@ void loop() {
   float sy = cal.YX * fdX + cal.YY * fdY;
   sx *= (sx > 0) ? cal.gRight * set.trimRight : cal.gLeft * set.trimLeft;
   sy *= (sy > 0) ? cal.gDown  * set.trimDown  : cal.gUp   * set.trimUp;
+
+  // Axis snap: a push within axisSnap degrees of horizontal/vertical is
+  // turned onto the axis, so straight lines stay straight. Angles beyond it
+  // are stretched to fill the rest of each 45-degree half-quadrant, so
+  // direction stays continuous and diagonals still work.
+  if (set.axisSnap > 0 && (sx != 0 || sy != 0)) {
+    float mag = sqrt(sx * sx + sy * sy);
+    float ang = atan2(sy, sx);
+    float axis = round(ang / HALF_PI) * HALF_PI;          // nearest of 0, +-90, 180
+    float d = ang - axis;                                 // -45..45 deg
+    float snap = radians(set.axisSnap), quarter = HALF_PI / 2;
+    float ad = fabs(d);
+    ad = (ad <= snap) ? 0 : (ad - snap) * quarter / (quarter - snap);
+    ang = axis + (d < 0 ? -ad : ad);
+    sx = mag * cos(ang);  sy = mag * sin(ang);
+  }
 
   // Radial deadzone and curve. The old per-axis deadzone was a square: any
   // push within 0.35 of an axis got that component zeroed, so shallow
