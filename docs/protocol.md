@@ -46,7 +46,7 @@ The firmware handles one command at a time and ignores a new one while a reply i
 | `0x01` | PING | — | `0x81` |
 | `0x10` | STREAM | `u8` 1 = on, 0 = off | none |
 | `0x11` | GET_SETTINGS | — | `0x91` |
-| `0x12` | SET_SETTINGS | 13 × f32 | `0x91` |
+| `0x12` | SET_SETTINGS | 14 × f32 | `0x91` |
 | `0x13` | GET_CAL | — | `0x93` |
 | `0x20` | CAL_BEGIN | — | `0xA3` |
 | `0x21` | CAL_REST | — | `0xA1` |
@@ -61,10 +61,10 @@ Direction indices are **0 = up, 1 = down, 2 = left, 3 = right**.
 `SET_SETTINGS` payload order, all f32, starting at byte 1:
 
 ```
-deadzone, speed, trimUp, trimDown, trimLeft, trimRight, scrollStep, buttonQuietMs, curve, plateau, rampEnd, boostStart, crisp
+deadzone, speed, trimUp, trimDown, trimLeft, trimRight, scrollStep, buttonQuietMs, curve, plateau, rampEnd, boostStart, crisp, axisSnap
 ```
 
-`curve` is 0 (power curve) or 1 (plateau curve). `plateau` is the plateau speed as a fraction of top speed, 0.1–0.8. `rampEnd` (0.05–0.6) is the push fraction where the ramp reaches the plateau, `boostStart` (0.4–0.98) where speed starts rising above it, and `crisp` (0–1) the negative-inertia gain. Firmware v2+; zeros or out-of-range values (e.g. from an older page) fall back to defaults.
+`curve` is 0 (power curve) or 1 (plateau curve). `plateau` is the plateau speed as a fraction of top speed, 0.1–0.8. `rampEnd` (0.05–0.6) is the push fraction where the ramp reaches the plateau, `boostStart` (0.4–0.98) where speed starts rising above it, and `crisp` (0–1) the negative-inertia gain. `axisSnap` (0–25, degrees) locks pushes this close to horizontal/vertical onto the axis; 0 = off. Firmware v2+; zeros or out-of-range values (e.g. from an older page) fall back to defaults.
 
 `scrollStep` and `buttonQuietMs` are integers sent as floats; the firmware truncates them.
 
@@ -87,7 +87,7 @@ Tilt change is the angle between the current resting orientation and the one rec
 
 ### `0x91` SETTINGS
 
-Byte 1 onward: the same 13 floats as `SET_SETTINGS`, in the same order.
+Byte 1 onward: the same 14 floats as `SET_SETTINGS`, in the same order.
 
 ### `0x93` CAL
 

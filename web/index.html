@@ -199,6 +199,7 @@
     <div class="set"><label for="sBoost">Boost starts at</label><input type="range" id="sBoost" min="0.4" max="0.95" step="0.05"><output id="oBoost"></output></div>
     <div class="set"><label for="sCrisp">Crispness</label><input type="range" id="sCrisp" min="0" max="1" step="0.1"><output id="oCrisp"></output></div>
     <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
+    <div class="set"><label for="sSnap">Axis snap</label><input type="range" id="sSnap" min="0" max="25" step="1"><output id="oSnap"></output></div>
     <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
     <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
     <div class="set"><label for="sTU">Trim up</label><input type="range" id="sTU" min="0.5" max="2" step="0.05"><output id="oTU"></output></div>
@@ -292,7 +293,7 @@ async function connect(){
 
   await cmd(C.GET_SET);
   const s = await expect(R.SETTINGS);
-  const v = floats(s, 1, 13);
+  const v = floats(s, 1, 14);
   settings = { speed:v[1], deadzone:v[0], trimUp:v[2], trimDown:v[3],
                trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7],
                ...plateauFields(v) };
@@ -471,6 +472,7 @@ const SLIDERS = [
   ["sBoost","oBoost","boostStart", v=>Math.round(v*100)+"%"],
   ["sCrisp","oCrisp","crisp", v=>v.toFixed(1)],
   ["sDead","oDead","deadzone", v=>v.toFixed(2)],
+  ["sSnap","oSnap","axisSnap", v=>v.toFixed(0)+"°"],
   ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
   ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
   ["sTU","oTU","trimUp", v=>v.toFixed(2)],
@@ -489,7 +491,8 @@ function fillSettings(){
 // Older firmware sends 0s for fields it doesn't have.
 function plateauFields(v){
   return { curve:v[8], plateau:v[9] || 0.25, rampEnd:v[10] || 0.35,
-           boostStart:v[11] || 0.85, crisp:v[12] || 0 };
+           boostStart:v[11] || 0.85, crisp:v[12] || 0,
+           axisSnap: isNaN(v[13]) ? 10 : v[13] };
 }
 const CURVE_NOTES = [
   "Power: very fine near centre, building to full speed at full push.",
@@ -516,7 +519,8 @@ function pushSettings(){
                ...f32(settings.trimLeft), ...f32(settings.trimRight),
                ...f32(settings.scroll), ...f32(settings.quiet),
                ...f32(settings.curve), ...f32(settings.plateau),
-               ...f32(settings.rampEnd), ...f32(settings.boostStart), ...f32(settings.crisp)];
+               ...f32(settings.rampEnd), ...f32(settings.boostStart), ...f32(settings.crisp),
+               ...f32(settings.axisSnap)];
     await cmd(C.SET_SET, p);
     try{ await expect(R.SETTINGS); }catch(e){}
     updateDiag();
@@ -580,7 +584,7 @@ gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.g
 magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
 
 curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  ramp ${n(s.rampEnd,2)}  boost ${n(s.boostStart,2)}  crisp ${n(s.crisp,1)}` : "power"}
-speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
+speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  axis snap ${n(s.axisSnap,0)}°  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
 trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
 
 live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
@@ -606,7 +610,7 @@ $("defaults").onclick = async () => {
   await cmd(C.GET_SET);
   try{
     const s = await expect(R.SETTINGS);
-    const v = floats(s, 1, 13);
+    const v = floats(s, 1, 14);
     settings = { deadzone:v[0], speed:v[1], trimUp:v[2], trimDown:v[3],
                  trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7],
                  ...plateauFields(v) };
