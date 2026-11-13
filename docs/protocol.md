@@ -46,7 +46,7 @@ The firmware handles one command at a time and ignores a new one while a reply i
 | `0x01` | PING | — | `0x81` |
 | `0x10` | STREAM | `u8` 1 = on, 0 = off | none |
 | `0x11` | GET_SETTINGS | — | `0x91` |
-| `0x12` | SET_SETTINGS | 8 × f32 | `0x91` |
+| `0x12` | SET_SETTINGS | 10 × f32 | `0x91` |
 | `0x13` | GET_CAL | — | `0x93` |
 | `0x20` | CAL_BEGIN | — | `0xA3` |
 | `0x21` | CAL_REST | — | `0xA1` |
@@ -61,8 +61,10 @@ Direction indices are **0 = up, 1 = down, 2 = left, 3 = right**.
 `SET_SETTINGS` payload order, all f32, starting at byte 1:
 
 ```
-deadzone, speed, trimUp, trimDown, trimLeft, trimRight, scrollStep, buttonQuietMs
+deadzone, speed, trimUp, trimDown, trimLeft, trimRight, scrollStep, buttonQuietMs, curve, plateau
 ```
+
+`curve` is 0 (power curve) or 1 (plateau curve). `plateau` is the plateau speed as a fraction of top speed, 0.1–0.8. Firmware v2+; an 8-float payload from an older page leaves them at power curve.
 
 `scrollStep` and `buttonQuietMs` are integers sent as floats; the firmware truncates them.
 
@@ -85,7 +87,7 @@ Tilt change is the angle between the current resting orientation and the one rec
 
 ### `0x91` SETTINGS
 
-Byte 1 onward: the same 8 floats as `SET_SETTINGS`, in the same order.
+Byte 1 onward: the same 10 floats as `SET_SETTINGS`, in the same order.
 
 ### `0x93` CAL
 

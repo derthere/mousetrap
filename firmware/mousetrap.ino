@@ -12,7 +12,7 @@
 #include <EEPROM.h>
 #include <Adafruit_TinyUSB.h>
 
-#define FW_VERSION    1
+#define FW_VERSION    2
 #define PROTO_VERSION 1
 
 // ---- Pins (GPIO numbers) ----
@@ -28,11 +28,45 @@
 // knob doesn't drag the pointer with it.
 #define SCROLL_QUIET_MS 250
 
+// ---- Motion feel ----
+// All tunable from here; the web page's "speed" slider still scales the top speed.
+#define LOOP_US          5000   // fixed 200 Hz loop; motion is computed per second, not per loop
+#define PX_PER_S_PER_SPEED 80.0 // top speed = set.speed * this (speed 25 -> 2000 px/s at full push)
+#define CURVE_EXP        2.2    // response curve: 1 = linear, higher = finer near centre
+#define MAX_PUSH         1.15   // calibrated full push = 1.0; allow a little past it
+// One Euro filter: smooth when nearly still, near-zero lag when moving fast.
+#define EURO_MIN_CUTOFF  1.5    // Hz. Lower = steadier hold, more lag on slow moves
+#define EURO_BETA        0.4    // Higher = less lag on fast moves
+#define EURO_D_CUTOFF    1.0
+#define GATE_RAMP_MS     60     // cursor eases in over this long after the magnet gate opens
+// Plateau curve (TrackPoint-style, Selker & Rutledge): soft ramp, then a wide
+// band of steady speed for normal pushes, then a rise to top speed at full push.
+#define PLATEAU_START    0.25   // push fraction where the plateau begins
+#define PLATEAU_END      0.70   // ...and ends
+#define NEG_INERTIA      0.4    // plateau mode only: exaggerate speed changes so starts/stops feel crisp; 0 = off
+#define NEG_INERTIA_TAU  0.10   // seconds
+#define REBOUND_MS       120    // a direction reversal must sit in the deadzone this long first; 0 = off
+#define RECENTRE_RATE    0.002  // per loop, while hands-off: slowly re-zero drifting rest values
+
 void onDeviceCalibration();   // defined at the bottom
 
 // Declared up here because the IDE auto-generates prototypes at the top of
 // the file; a type used in a return position must already be known.
 struct Sample { float dX, dY, mag, rawAX, rawAY, rawAZ, mX, mY, mZ; };
+
+// One Euro filter (Casiez et al. 2012): a low-pass whose cutoff rises with speed.
+struct Euro {
+  float x = 0, dx = 0; bool init = false;
+  static float alpha(float cutoff, float dt) { float tau = 1.0f / (2 * PI * cutoff); return 1.0f / (1.0f + tau / dt); }
+  float step(float v, float dt) {
+    if (!init) { x = v; dx = 0; init = true; return v; }
+    float d = (v - x) / dt;
+    dx += alpha(EURO_D_CUTOFF, dt) * (d - dx);
+    float cutoff = EURO_MIN_CUTOFF + EURO_BETA * fabs(dx);
+    x += alpha(cutoff, dt) * (v - x);
+    return x;
+  }
+};
 
 // ================= USB HID =================
 
@@ -96,16 +130,37 @@ struct Settings {
   float trimUp, trimDown, trimLeft, trimRight;
   int16_t scrollStep;
   uint16_t buttonQuietMs;
+  float curve;      // 0 = power curve, 1 = plateau curve
+  float plateau;    // plateau speed as a fraction of top speed
 };
 struct Store { uint16_t magic; Cal cal; Settings set; };
 
 const uint16_t STORE_MAGIC = 0xCA1E;
 const Cal      DEF_CAL = { -0.252, 0.571, 0.945, 0.270, 0.65, 2.1, 0.97, 1.03, 4.0, 3.0, 0, 0, 0 };
-const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150 };
+const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25 };
+
 
 Cal cal = DEF_CAL;
 Settings set = DEF_SET;
 bool calValid = false;
+
+// Settings saved by older firmware end before these fields, so whatever sits
+// in flash there is garbage. Pull anything out of range back to defaults.
+void sanitizeSettings() {
+  if (!(set.curve == 0 || set.curve == 1)) set.curve = 0;
+  if (!(set.plateau >= 0.1f && set.plateau <= 0.8f)) set.plateau = DEF_SET.plateau;
+}
+
+float smoothstep01(float x) { x = constrain(x, 0.0f, 1.0f); return x * x * (3 - 2 * x); }
+
+// Push fraction t (0 at deadzone edge, 1 at calibrated full push) -> fraction of top speed.
+float plateauCurve(float t) {
+  float P = set.plateau;
+  if (t < PLATEAU_START) return P * smoothstep01(t / PLATEAU_START);
+  if (t < PLATEAU_END)   return P;
+  if (t <= 1.0f)         return P + (1 - P) * smoothstep01((t - PLATEAU_END) / (1 - PLATEAU_END));
+  return t;                                    // past full push: keep rising gently
+}
 
 void saveStore() {
   Store s = { STORE_MAGIC, cal, set };
@@ -243,6 +298,7 @@ void sendSettings() {
   pf(b, i, set.trimUp); pf(b, i, set.trimDown);
   pf(b, i, set.trimLeft); pf(b, i, set.trimRight);
   pf(b, i, (float)set.scrollStep); pf(b, i, (float)set.buttonQuietMs);
+  pf(b, i, set.curve); pf(b, i, set.plateau);
   send(b);
 }
 
@@ -279,6 +335,8 @@ void handleCommand() {
       set.trimLeft = uf(c, i); set.trimRight = uf(c, i);
       set.scrollStep = (int16_t)uf(c, i);
       set.buttonQuietMs = (uint16_t)uf(c, i);
+      set.curve = uf(c, i);  set.plateau = uf(c, i);   // 0s from an older page
+      sanitizeSettings();
       sendSettings();
       break;
     }
@@ -325,7 +383,13 @@ void handleCommand() {
             for (int d = 1; d < 4; d++) if (dirLo[d] < weakest) weakest = dirLo[d];
             if (weakest < restNoise * 1.2) err = 4;    // magnet can't separate push from rest
             else {
-              n.magOn  = (restNoise + weakest) / 2;
+              // Gate opens a quarter of the way from rest to a FULL push, not
+              // halfway. Halfway meant gentle pushes never opened the gate, so
+              // the cursor sat dead and then lurched once you pushed harder.
+              // Floor at 1.5x rest noise so desk bumps still don't open it.
+              n.magOn  = restNoise + 0.25f * (weakest - restNoise);
+              n.magOn  = max(n.magOn, restNoise * 1.5f);
+              n.magOn  = min(n.magOn, (restNoise + weakest) / 2);
               n.magOff = (restNoise + n.magOn) / 2;
               n.restAX = restAccX; n.restAY = restAccY; n.restAZ = restAccZ;
               cal = n;  calValid = true;  saveStore();
@@ -387,12 +451,22 @@ void setup() {
 
   Serial.begin(115200);
   Wire.begin();
+  Wire.setClock(400000);              // one getEvent() burst: ~2.5 ms at 100 kHz, ~0.6 ms at 400 kHz
   if (!icm.begin_I2C()) { while (1) delay(10); }
+
+  // Library defaults are wrong for this job: +/-16 g range (8x coarser than
+  // needed for a sub-1 g tilt) and a 53.6 Hz output rate, slower than the
+  // loop, so the cursor got the same sample several times in a row and then
+  // a jump. Values stay in m/s^2, so stored calibration remains valid.
+  icm.setAccelRange(ICM20948_ACCEL_RANGE_2_G);
+  icm.setAccelRateDivisor(4);         // 1125 / (1+4) = 225 Hz, above the 200 Hz loop
+  icm.enableAccelDLPF(true, ICM20X_ACCEL_FREQ_50_4_HZ);
 
   EEPROM.begin(256);
   Store s;
   EEPROM.get(0, s);
   if (s.magic == STORE_MAGIC) { cal = s.cal; set = s.set; calValid = true; }
+  sanitizeSettings();
 
   delay(1000);
   baseline();                 // hands off the handle for ~3 s after plug-in
@@ -436,19 +510,100 @@ void loop() {
     }
   }
 
-  // ---- cursor math (always computed so the app can show it live) ----
-  float sx = cal.XX * s.dX + cal.XY * s.dY;
-  float sy = cal.YX * s.dX + cal.YY * s.dY;
-  sx *= (sx > 0) ? cal.gRight * set.trimRight : cal.gLeft * set.trimLeft;
-  sy *= (sy > 0) ? cal.gDown  * set.trimDown  : cal.gUp   * set.trimUp;
-  if (fabs(sx) < set.deadzone) sx = 0;
-  if (fabs(sy) < set.deadzone) sy = 0;
-  int moveX = constrain((int)(sx * set.speed), -20, 20);
-  int moveY = constrain((int)(sy * set.speed), -20, 20);
+  // ---- timing ----
+  static unsigned long lastUs = micros();
+  unsigned long nowUs = micros();
+  float dt = (nowUs - lastUs) * 1e-6f;
+  lastUs = nowUs;
+  if (dt <= 0 || dt > 0.05f) dt = LOOP_US * 1e-6f;   // first pass, or after a blocking command
 
+  // ---- magnet gate ----
   static bool gripped = false;
+  static unsigned long gripSince = 0;
+  bool wasGripped = gripped;
   if (s.mag > cal.magOn)       gripped = true;
   else if (s.mag < cal.magOff) gripped = false;
+  if (gripped && !wasGripped) gripSince = millis();
+
+  // ---- hands-off drift correction ----
+  // While nobody is touching it, nudge the zero toward the current reading so
+  // slow drift (temperature, the sprung mount settling) never becomes a
+  // constant bias that makes one direction feel heavier than the other.
+  if (!gripped && !calMode && !recMode && fabs(s.dX) < 0.6f && fabs(s.dY) < 0.6f) {
+    restAccX += RECENTRE_RATE * s.dX;
+    restAccY += RECENTRE_RATE * s.dY;
+  }
+
+  // ---- cursor math (always computed so the app can show it live) ----
+  static Euro fX, fY;
+  float fdX = fX.step(s.dX, dt);
+  float fdY = fY.step(s.dY, dt);
+  float sx = cal.XX * fdX + cal.XY * fdY;
+  float sy = cal.YX * fdX + cal.YY * fdY;
+  sx *= (sx > 0) ? cal.gRight * set.trimRight : cal.gLeft * set.trimLeft;
+  sy *= (sy > 0) ? cal.gDown  * set.trimDown  : cal.gUp   * set.trimUp;
+
+  // Radial deadzone and curve. The old per-axis deadzone was a square: any
+  // push within 0.35 of an axis got that component zeroed, so shallow
+  // diagonals snapped to horizontal/vertical and then jumped when they
+  // crossed the threshold. Here the curve acts on the push's length and the
+  // direction is kept exactly.
+  float r = sqrt(sx * sx + sy * sy);
+  float vx = 0, vy = 0;                       // px/s
+  float dz = constrain(set.deadzone, 0.0f, 0.9f);
+  float t = (r > dz) ? constrain((r - dz) / (1.0f - dz), 0.0f, MAX_PUSH) : 0;
+  float frac;                                 // fraction of top speed
+  if (set.curve == 1) {
+    frac = plateauCurve(t);
+    // Negative inertia: add a bit of the difference between the speed now and
+    // its recent average, so the cursor gets going (and stops) promptly.
+    static float lagged = 0;
+    lagged += (frac - lagged) * constrain(dt / NEG_INERTIA_TAU, 0.0f, 1.0f);
+    if (frac > 0) frac = constrain(frac + NEG_INERTIA * (frac - lagged), 0.0f, MAX_PUSH);
+  } else {
+    frac = pow(t, CURVE_EXP);
+  }
+  if (r > dz) {
+    float pxs = set.speed * PX_PER_S_PER_SPEED * frac;
+    vx = sx / r * pxs;
+    vy = sy / r * pxs;
+  }
+
+  // Spring rebound: on release the handle swings back through centre and
+  // briefly tilts the other way, which flicked the cursor backwards. A
+  // reversal (>90 deg from the last direction) is only accepted once the
+  // push has rested inside the deadzone for REBOUND_MS.
+  static float lastDirX = 0, lastDirY = 0;
+  static unsigned long inDeadzoneSince = 0, blockedSince = 0;
+  if (r <= dz) {
+    if (inDeadzoneSince == 0) inDeadzoneSince = millis();
+    blockedSince = 0;
+  } else {
+    bool settled = inDeadzoneSince && millis() - inDeadzoneSince >= REBOUND_MS;
+    bool reversal = (sx * lastDirX + sy * lastDirY) < 0;
+    if (reversal && !settled && blockedSince == 0) blockedSince = millis();
+    bool timedOut = blockedSince && millis() - blockedSince >= REBOUND_MS;  // deliberate reversal held
+    if (REBOUND_MS > 0 && reversal && !settled && !timedOut) {
+      vx = vy = 0;                            // ignore the swing-back
+    } else {
+      lastDirX = sx / r;  lastDirY = sy / r;
+      inDeadzoneSince = 0;  blockedSince = 0;
+    }
+  }
+  if (inDeadzoneSince && millis() - inDeadzoneSince > 400) lastDirX = lastDirY = 0;  // long rest: forget direction
+
+  // Ease in after the gate opens so grabbing the handle doesn't lurch.
+  if (gripped) {
+    unsigned long held = millis() - gripSince;
+    if (held < GATE_RAMP_MS) { float k = (float)held / GATE_RAMP_MS; vx *= k; vy *= k; }
+  }
+
+  // Sub-pixel accumulator: slow pushes still move, and the speed is the same
+  // whatever the loop rate happens to be.
+  static float accX = 0, accY = 0;
+  accX += vx * dt;  accY += vy * dt;
+  int moveX = constrain((int)accX, -127, 127);
+  int moveY = constrain((int)accY, -127, 127);
 
   bool leftPressed  = digitalRead(LEFT_CLICK_PIN)  == PRESSED;
   bool rightPressed = digitalRead(RIGHT_CLICK_PIN) == PRESSED;
@@ -484,11 +639,23 @@ void loop() {
     mouseSetButton(BTN_LEFT, leftPressed);
     mouseSetButton(BTN_RIGHT, rightPressed);
 
-    static unsigned long lastButton = 0;
-    if (leftPressed || rightPressed) lastButton = millis();
-    if (gripped && millis() - lastButton > set.buttonQuietMs
-                && millis() - lastScroll > SCROLL_QUIET_MS)
-      mouseMove(moveX, moveY, 0);
+    // Settle on button EDGES only (press and release jolt the handle), so
+    // click-and-drag still moves during the hold.
+    static bool prevL = false, prevR = false;
+    static unsigned long lastButtonEdge = 0;
+    if (leftPressed != prevL || rightPressed != prevR) lastButtonEdge = millis();
+    prevL = leftPressed;  prevR = rightPressed;
+
+    bool allowed = gripped
+                && millis() - lastButtonEdge > set.buttonQuietMs
+                && millis() - lastScroll > SCROLL_QUIET_MS;
+    if (allowed) {
+      if (moveX || moveY) { mouseMove(moveX, moveY, 0); accX -= moveX; accY -= moveY; }
+    } else {
+      accX = accY = 0;                        // don't bank motion to release later
+    }
+  } else {
+    accX = accY = 0;
   }
 
   // ---- live state to the app ----
@@ -507,7 +674,12 @@ void loop() {
     send(b);
   }
 
-  delay(10);
+  // Fixed-rate loop: wait out the rest of the 5 ms period.
+  static unsigned long nextUs = micros();
+  nextUs += LOOP_US;
+  long wait = (long)(nextUs - micros());
+  if (wait > 0) delayMicroseconds(wait);
+  else nextUs = micros();                     // fell behind (calibration, USB): resync
 }
 
 // ================= ON-DEVICE FALLBACK =================
