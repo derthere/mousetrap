@@ -77,6 +77,11 @@
   .stepbody .t{font-weight:500}
   .stepbody .d{font-size:13px;color:var(--dim);margin-top:2px;font-family:var(--mono)}
   .note{font-size:13px;color:var(--dim);margin:14px 0 0}
+  .prompt{margin:4px 0 18px;padding:18px;border-radius:10px;background:var(--bg);border:1px solid var(--line);text-align:center}
+  .prompt .big{font-size:24px;font-weight:600;margin:0 0 6px}
+  .prompt .small{font-size:14px;color:var(--dim);margin:0}
+  .prompt .prog{height:6px;border-radius:3px;background:var(--line);margin-top:14px;overflow:hidden}
+  .prompt .prog i{display:block;height:100%;width:0;background:var(--btn);transition:width .1s linear}
   .result{padding:12px 14px;border-radius:8px;margin-top:16px;font-size:14px;border:1px solid}
   .result.ok{border-color:var(--ok);color:var(--ok)}
   .result.bad{border-color:var(--bad);color:var(--bad)}
@@ -169,18 +174,23 @@
     <h2>Calibration</h2>
     <p class="note" style="margin:0 0 16px">
       Sets up the handle for your unit. You only need this once per enclosure,
-      or after moving the magnet. The cursor stays still while it runs.
+      or after moving the magnet. Click Start, then just follow the prompts:
+      each step records by itself once you're holding still. Sound on helps.
     </p>
+    <div class="prompt hide" id="calPrompt">
+      <p class="big" id="pBig"></p>
+      <p class="small" id="pSmall"></p>
+      <div class="prog"><i id="pProg"></i></div>
+    </div>
     <ol class="steps" id="steps">
       <li data-k="rest"><div class="stepbody"><div class="t">Rest — hands off the handle</div><div class="d" id="d-rest">not recorded</div></div></li>
-      <li data-k="0"><div class="stepbody"><div class="t">Push <b>up</b> and hold</div><div class="d" id="d-0">not recorded</div></div></li>
-      <li data-k="1"><div class="stepbody"><div class="t">Push <b>down</b> and hold</div><div class="d" id="d-1">not recorded</div></div></li>
-      <li data-k="2"><div class="stepbody"><div class="t">Push <b>left</b> and hold</div><div class="d" id="d-2">not recorded</div></div></li>
-      <li data-k="3"><div class="stepbody"><div class="t">Push <b>right</b> and hold</div><div class="d" id="d-3">not recorded</div></div></li>
+      <li data-k="0"><div class="stepbody"><div class="t">Push <b>up</b> all the way and hold</div><div class="d" id="d-0">not recorded</div></div></li>
+      <li data-k="1"><div class="stepbody"><div class="t">Push <b>down</b> all the way and hold</div><div class="d" id="d-1">not recorded</div></div></li>
+      <li data-k="2"><div class="stepbody"><div class="t">Push <b>left</b> all the way and hold</div><div class="d" id="d-2">not recorded</div></div></li>
+      <li data-k="3"><div class="stepbody"><div class="t">Push <b>right</b> all the way and hold</div><div class="d" id="d-3">not recorded</div></div></li>
     </ol>
     <div class="row" style="margin-top:18px">
       <button id="calStart" class="primary">Start calibration</button>
-      <button id="calRec" class="hide">Record this step</button>
       <button id="calCancel" class="hide">Cancel</button>
     </div>
     <div id="calMsg" class="result hide"></div>
@@ -324,6 +334,7 @@ function setStatus(on, text){ $("dot").classList.toggle("on", on); $("statusText
 
 /* ---------- live ---------- */
 let last = null;
+let recent = [];   // [time, dX, dY] for the last 1.5 s, used by guided calibration
 let magScale = 1;
 function renderState(dv){
   const flags = dv.getUint8(1);
@@ -334,6 +345,8 @@ function renderState(dv){
                mX:v[11], mY:v[12], mZ:v[13] };
   last = st;
   if(rec) rec.push([performance.now() - recT0, st]);
+  recent.push([performance.now(), st.dX, st.dY]);
+  while(recent.length && performance.now() - recent[0][0] > 1500) recent.shift();
 
   // magnet components: bars auto-scale to the largest value seen this session
   magScale = Math.max(magScale, Math.abs(st.mX), Math.abs(st.mY), Math.abs(st.mZ));
@@ -375,54 +388,122 @@ function sizeDeadzone(){
   $("dz").style.width = pct + "%"; $("dz").style.height = pct + "%";
 }
 
-/* ---------- calibration ---------- */
+/* ---------- calibration (guided, hands-free) ---------- */
 const ORDER = ["rest","0","1","2","3"];
-let stepIdx = -1;
+const DIR_NAME = { "0":"up", "1":"down", "2":"left", "3":"right" };
+let stepIdx = -1, calRun = 0;     // calRun changes on cancel so a running sequence stops
 
+// Detection thresholds, on tilt in m/s^2 relative to rest.
+const PUSH_MIN   = 0.45;  // a push must tilt at least this much (a full push is ~0.9-1.9 on current builds)
+const STEADY_MS  = 600;   // ...and hold this still for this long before recording
+const STEADY_TOL = 0.2;   // max wobble (m/s^2, per axis) that still counts as holding still
+const RELEASE_MAX = 0.25; // back below this = let go
+const NEAR_PEAK  = 0.85;  // must be holding near the furthest point reached, not partway
+
+let audio = null;
+function beep(freq = 660, ms = 120, when = 0){
+  if(!audio) return;
+  const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + when;
+  o.frequency.value = freq; o.connect(g); g.connect(audio.destination);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+  o.start(t); o.stop(t + ms / 1000 + 0.02);
+}
+const cueNext = () => beep(660, 140);
+const cueDone = () => { beep(880, 90); beep(1175, 120, 0.11); };
+const cueGood = () => { beep(784, 120); beep(988, 120, 0.13); beep(1319, 200, 0.26); };
+const cueBad  = () => { beep(330, 250); };
+
+function prompt(big, small = "", prog = null){
+  $("calPrompt").classList.remove("hide");
+  $("pBig").textContent = big; $("pSmall").textContent = small;
+  $("pProg").style.width = prog == null ? "0" : Math.round(prog * 100) + "%";
+}
 function markStep(){
   document.querySelectorAll("#steps li").forEach(li => {
-    const k = li.dataset.k, i = ORDER.indexOf(k);
+    const i = ORDER.indexOf(li.dataset.k);
     li.classList.toggle("done", i < stepIdx);
     li.classList.toggle("now", i === stepIdx);
   });
-  if(stepIdx >= 0 && stepIdx < ORDER.length){
-    const k = ORDER[stepIdx];
-    $("calRec").textContent = k === "rest" ? "Record rest" : "Record — I’m holding it";
-  }
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function cancelled(run){ if(run !== calRun) throw new Error("cancelled"); }
+const tiltNow = () => last ? Math.hypot(last.dX, last.dY) : 0;
+function steadyFor(ms){
+  const now = performance.now(), win = recent.filter(r => now - r[0] <= ms);
+  if(win.length < 4 || now - win[0][0] < ms * 0.8) return false;
+  const xs = win.map(r => r[1]), ys = win.map(r => r[2]);
+  return Math.max(...xs) - Math.min(...xs) <= STEADY_TOL && Math.max(...ys) - Math.min(...ys) <= STEADY_TOL;
+}
+// Show a progress bar while the device records (it records for ~1.8 s; rest adds ~1 s of zeroing).
+async function recordWithProgress(run, big, small, ms, sendAndWait){
+  const t0 = performance.now(); let done = false, result, error;
+  sendAndWait().then(v => { result = v; done = true; }, e => { error = e; done = true; });
+  while(!done){ cancelled(run); prompt(big, small, Math.min(0.97, (performance.now() - t0) / ms)); await sleep(50); }
+  if(error) throw error;
+  prompt(big, small, 1);
+  return result;
+}
+
 async function calStart(){
+  try{ audio = audio || new (window.AudioContext || window.webkitAudioContext)(); await audio.resume(); }catch(e){ audio = null; }
+  const run = ++calRun;
   $("calMsg").classList.add("hide");
   ORDER.forEach(k => $("d-"+k).textContent = "not recorded");
-  await cmd(C.CAL_BEGIN); await expect(R.RESULT);
-  stepIdx = 0; markStep();
   $("calStart").classList.add("hide");
-  $("calRec").classList.remove("hide");
   $("calCancel").classList.remove("hide");
-}
-async function calRecord(){
-  const k = ORDER[stepIdx];
-  $("calRec").disabled = true;
-  $("calRec").textContent = "Recording… keep holding";
   try{
-    if(k === "rest"){
-      await cmd(C.CAL_REST);
-      const dv = await expect(R.REST, 8000);
-      const v = floats(dv, 2, 4);
-      $("d-rest").textContent = `magnet noise ${v[0].toFixed(2)}`;
-    } else {
-      await cmd(C.CAL_DIR, [parseInt(k)]);
-      const dv = await expect(R.DIR, 8000);
+    await cmd(C.CAL_BEGIN); await expect(R.RESULT);
+
+    // ---- rest ----
+    stepIdx = 0; markStep();
+    for(let n = 3; n > 0; n--){ cancelled(run); prompt("Hands off", `Let go of the handle. Starting in ${n}…`); beep(520, 80); await sleep(1000); }
+    cueNext();
+    const rv = await recordWithProgress(run, "Hands off", "Measuring rest…", 2900, async () => {
+      await cmd(C.CAL_REST); return expect(R.REST, 8000);
+    });
+    $("d-rest").textContent = `magnet noise ${floats(rv, 2, 1)[0].toFixed(2)}`;
+    cueDone();
+
+    // ---- four directions ----
+    for(let i = 1; i < ORDER.length; i++){
+      const k = ORDER[i], name = DIR_NAME[k];
+      stepIdx = i; markStep();
+      await sleep(400);
+      cueNext();
+      // wait for a push that holds still
+      const waitStart = performance.now();
+      let peak = 0;
+      while(true){
+        cancelled(run);
+        const tilt = tiltNow();
+        peak = Math.max(peak, tilt);
+        const hint = performance.now() - waitStart > 12000
+          ? "Push it as far as it goes, then hold it still."
+          : tilt < PUSH_MIN ? "Push all the way to the stop." : "Hold it there…";
+        prompt(`Push ${name}`, hint);
+        if(tilt >= PUSH_MIN && tilt >= NEAR_PEAK * peak && steadyFor(STEADY_MS)) break;
+        await sleep(50);
+      }
+      beep(990, 60);
+      const dv = await recordWithProgress(run, `Hold ${name}`, "Recording — keep holding…", 1900, async () => {
+        await cmd(C.CAL_DIR, [parseInt(k)]); return expect(R.DIR, 8000);
+      });
       const v = floats(dv, 2, 4);
       $("d-"+k).textContent = `tilt ${v[0].toFixed(2)}, ${v[1].toFixed(2)} · magnet ${v[2].toFixed(1)}–${v[3].toFixed(1)}`;
+      cueDone();
+      // wait for release before the next direction
+      while(tiltNow() > RELEASE_MAX){ cancelled(run); prompt("Let go", "Release the handle back to centre."); await sleep(50); }
     }
-  }catch(err){ showCal(false, err.message); resetCalUI(); return; }
-  $("calRec").disabled = false;
-  stepIdx++;
-  if(stepIdx >= ORDER.length) return calCompute();
-  markStep();
+    stepIdx = ORDER.length; markStep();
+    prompt("Working it out…", "");
+    await calCompute();
+  }catch(err){
+    if(err.message !== "cancelled"){ showCal(false, err.message); cueBad(); }
+    resetCalUI();
+  }
 }
 async function calCompute(){
-  $("calRec").classList.add("hide");
   try{
     await cmd(C.CAL_COMPUTE);
     const dv = await expect(R.RESULT, 6000);
@@ -432,11 +513,12 @@ async function calCompute(){
                      2:"The pushes were too small or too alike. Push further and hold steady.",
                      3:"The four directions didn’t come out distinct. Make sure each push goes the way the step says.",
                      4:"The magnet can’t tell a push from rest. The magnet may need to sit closer to the sensor." };
-      showCal(false, msgs[err] || ("Failed (code "+err+")"));
+      showCal(false, msgs[err] || ("Failed (code "+err+")")); cueBad();
     } else {
       const v = floats(dv, 2, 5);
       showCal(true, `Saved. Magnet margin ${v[4].toFixed(1)}×` +
         (v[4] < 1.8 ? " — thin, but usable. Movement may feel hesitant on the weakest side." : " — good."));
+      cueGood();
       await cmd(C.GET_CAL);
       const c = await expect(R.CAL);
       const cv = floats(c, 2, 11);
@@ -445,7 +527,7 @@ async function calCompute(){
       calInfo.valid = true;
       placeMagMarkers(); updateDiag();
     }
-  }catch(err){ showCal(false, err.message); }
+  }catch(err){ showCal(false, err.message); cueBad(); }
   resetCalUI();
 }
 function showCal(ok, text){
@@ -456,10 +538,10 @@ function showCal(ok, text){
 function resetCalUI(){
   stepIdx = -1; markStep();
   $("calStart").classList.remove("hide"); $("calStart").textContent = "Run calibration again";
-  $("calRec").classList.add("hide"); $("calRec").disabled = false;
   $("calCancel").classList.add("hide");
+  $("calPrompt").classList.add("hide");
 }
-async function calCancel(){ await cmd(C.CAL_ABORT); try{ await expect(R.RESULT); }catch(e){} resetCalUI(); }
+async function calCancel(){ calRun++; await cmd(C.CAL_ABORT); try{ await expect(R.RESULT); }catch(e){} resetCalUI(); }
 
 /* ---------- settings ---------- */
 const SLIDERS = [
@@ -590,7 +672,6 @@ setInterval(() => { if(device) updateDiag(); }, 1000);
 $("connect").onclick = connect;
 $("disconnect").onclick = disconnect;
 $("calStart").onclick = calStart;
-$("calRec").onclick = calRecord;
 $("calCancel").onclick = calCancel;
 $("save").onclick = async () => {
   await cmd(C.SAVE); try{ await expect(R.RESULT); }catch(e){}
