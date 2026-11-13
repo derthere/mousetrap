@@ -27,6 +27,9 @@
 // Cursor stays still this long after the scroll wheel moves, so turning the
 // knob doesn't drag the pointer with it.
 #define SCROLL_QUIET_MS 250
+// Signal changes per physical click of the scroll knob (EC11-type: usually 4,
+// some are 2). Watch "enc" on the setup page while turning one click to check.
+#define ENC_COUNTS_PER_DETENT 4
 
 // ---- Motion feel ----
 // All tunable from here; the web page's "speed" slider still scales the top speed.
@@ -107,11 +110,15 @@ uint8_t mouseButtons = 0;
 void mouseMove(int8_t x, int8_t y, int8_t wheel) {
   if (usb_mouse.ready()) usb_mouse.mouseReport(RID_MOUSE, mouseButtons, x, y, wheel, 0);
 }
+// Button changes are sent by the loop in one combined report with movement and
+// scroll. Sending them separately meant whichever came second often found the
+// USB endpoint busy and was silently dropped.
+bool buttonsDirty = false;
+long pendingWheel = 0;            // scroll waiting to be sent
 void mouseSetButton(uint8_t mask, bool down) {
   uint8_t before = mouseButtons;
   if (down) mouseButtons |= mask; else mouseButtons &= ~mask;
-  if (before != mouseButtons && usb_mouse.ready())
-    usb_mouse.mouseReport(RID_MOUSE, mouseButtons, 0, 0, 0, 0);
+  if (before != mouseButtons) buttonsDirty = true;
 }
 #define BTN_LEFT  1
 #define BTN_RIGHT 2
@@ -187,7 +194,14 @@ void encISR() {
   encPos += ENC_TABLE[encState];
 }
 long encRead() { noInterrupts(); long p = encPos; interrupts(); return p; }
-long oldPosition = 0;
+long encEmitPos = 0;              // encoder count at the last click we scrolled for
+uint8_t encRest = 0;              // A/B state when the knob sits in a detent
+bool encAtRest() {
+  uint8_t ab = encState & 3;
+  if (ENC_COUNTS_PER_DETENT == 2) return ab == 0 || ab == 3;
+  if (ENC_COUNTS_PER_DETENT == 4) return ab == encRest;
+  return false;
+}
 
 // ================= SENSOR =================
 
@@ -412,7 +426,7 @@ void handleCommand() {
               pf(b, j, weakest / max(restNoise, 0.01f));   // margin ratio
               send(b);
               calMode = false;
-              oldPosition = encRead();
+              encEmitPos = encRead();
               break;
             }
           }
@@ -424,7 +438,7 @@ void handleCommand() {
 
     case C_CAL_ABORT:
       calMode = false; recMode = 0;
-      oldPosition = encRead();
+      encEmitPos = encRead();
       b[0] = R_RESULT; b[1] = 0; send(b);
       break;
 
@@ -443,6 +457,7 @@ void setup() {
   pinMode(ENC_A, INPUT_PULLUP);
   pinMode(ENC_B, INPUT_PULLUP);
   encState = (digitalRead(ENC_A) << 1) | digitalRead(ENC_B);
+  encRest = encState & 3;         // the knob rests in a detent at power-up
   attachInterrupt(digitalPinToInterrupt(ENC_A), encISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_B), encISR, CHANGE);
 
@@ -482,7 +497,7 @@ void setup() {
 
   delay(1000);
   baseline();                 // hands off the handle for ~3 s after plug-in
-  oldPosition = encRead();
+  encEmitPos = encRead();
   while (!TinyUSBDevice.mounted()) delay(10);
   if (DEBUG_USB) {
     delay(500);
@@ -650,17 +665,24 @@ void loop() {
 
   if (!calMode) {
     // ---- scroll ----
-    long newPosition = encRead();
-    long diff = newPosition - oldPosition;
-    if (diff != 0) {
-      long amount = diff * set.scrollStep;
-      while (amount != 0) {
-        int step = amount > 127 ? 127 : (amount < -127 ? -127 : (int)amount);
-        mouseMove(0, 0, step);  amount -= step;
-      }
-      oldPosition = newPosition;
-      lastScroll = millis();
+    // One scroll per physical click, not per signal change: scrolling on every
+    // quarter-click made the trigger point drift with contact bounce and
+    // where the knob happened to rest. Each time the knob settles in a detent
+    // we re-sync, so a missed or bounced count can't shift later clicks.
+    static long lastEncRaw = 0;
+    long pos = encRead();
+    if (pos != lastEncRaw) { lastScroll = millis(); lastEncRaw = pos; }   // pause the cursor from the first twitch
+    const long CPD = ENC_COUNTS_PER_DETENT;
+    long d = pos - encEmitPos;
+    long clicks = 0;
+    while (d >=  CPD) { clicks++; encEmitPos += CPD; d -= CPD; }
+    while (d <= -CPD) { clicks--; encEmitPos -= CPD; d += CPD; }
+    if (CPD > 1 && encAtRest()) {
+      if (d * 2 >=  CPD) clicks++;              // most of a click, with a count missed
+      else if (d * 2 <= -CPD) clicks--;
+      encEmitPos = pos;                         // bounce is absorbed here
     }
+    pendingWheel += clicks * CPD * set.scrollStep;   // same distance per click as before
 
     // ---- both buttons held = on-device calibration fallback ----
     static bool armed = false;
@@ -687,10 +709,16 @@ void loop() {
     bool allowed = gripped
                 && millis() - lastButtonEdge > set.buttonQuietMs
                 && millis() - lastScroll > SCROLL_QUIET_MS;
-    if (allowed) {
-      if (moveX || moveY) { mouseMove(moveX, moveY, 0); accX -= moveX; accY -= moveY; }
-    } else {
-      accX = accY = 0;                        // don't bank motion to release later
+    int mx = 0, my = 0;
+    if (allowed) { mx = moveX; my = moveY; }
+    else accX = accY = 0;                     // don't bank motion to release later
+
+    // One report carries buttons, movement and scroll. If the endpoint is still
+    // busy, nothing is lost: scroll and button changes wait for the next loop.
+    int w = constrain(pendingWheel, -127, 127);
+    if ((mx || my || w || buttonsDirty) && usb_mouse.ready()) {
+      usb_mouse.mouseReport(RID_MOUSE, mouseButtons, mx, my, w, 0);
+      accX -= mx;  accY -= my;  pendingWheel -= w;  buttonsDirty = false;
     }
   } else {
     accX = accY = 0;
@@ -769,5 +797,5 @@ void onDeviceCalibration() {
   if (calValid) { glide(1,0,100); glide(0,1,100); glide(-1,0,100); glide(0,-1,100); }
   else shakeCursor(12);
   calMode = false;
-  oldPosition = encRead();
+  encEmitPos = encRead();
 }
