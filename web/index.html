@@ -195,6 +195,9 @@
       </div><output></output></div>
     <p class="note" id="curveNote" style="margin:-4px 0 14px 142px"></p>
     <div class="set"><label for="sPlat">Plateau speed</label><input type="range" id="sPlat" min="0.1" max="0.8" step="0.05"><output id="oPlat"></output></div>
+    <div class="set"><label for="sRamp">Ramp length</label><input type="range" id="sRamp" min="0.05" max="0.6" step="0.05"><output id="oRamp"></output></div>
+    <div class="set"><label for="sBoost">Boost starts at</label><input type="range" id="sBoost" min="0.4" max="0.95" step="0.05"><output id="oBoost"></output></div>
+    <div class="set"><label for="sCrisp">Crispness</label><input type="range" id="sCrisp" min="0" max="1" step="0.1"><output id="oCrisp"></output></div>
     <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
     <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
     <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
@@ -289,10 +292,10 @@ async function connect(){
 
   await cmd(C.GET_SET);
   const s = await expect(R.SETTINGS);
-  const v = floats(s, 1, 10);
+  const v = floats(s, 1, 13);
   settings = { speed:v[1], deadzone:v[0], trimUp:v[2], trimDown:v[3],
                trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7],
-               curve:v[8], plateau:v[9] || 0.25 };   // older firmware sends 0s here
+               ...plateauFields(v) };
   fillSettings();
 
   await cmd(C.GET_CAL);
@@ -464,6 +467,9 @@ async function calCancel(){ await cmd(C.CAL_ABORT); try{ await expect(R.RESULT);
 const SLIDERS = [
   ["sSpeed","oSpeed","speed", v=>v.toFixed(0)],
   ["sPlat","oPlat","plateau", v=>Math.round(v*100)+"%"],
+  ["sRamp","oRamp","rampEnd", v=>Math.round(v*100)+"%"],
+  ["sBoost","oBoost","boostStart", v=>Math.round(v*100)+"%"],
+  ["sCrisp","oCrisp","crisp", v=>v.toFixed(1)],
   ["sDead","oDead","deadzone", v=>v.toFixed(2)],
   ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
   ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
@@ -480,15 +486,20 @@ function fillSettings(){
   sizeDeadzone();
   showCurve();
 }
+// Older firmware sends 0s for fields it doesn't have.
+function plateauFields(v){
+  return { curve:v[8], plateau:v[9] || 0.25, rampEnd:v[10] || 0.35,
+           boostStart:v[11] || 0.85, crisp:v[12] || 0 };
+}
 const CURVE_NOTES = [
   "Power: very fine near centre, building to full speed at full push.",
-  "Plateau: quick to a steady cruising speed for most pushes; full push goes faster. Set the cruise speed below.",
+  "Plateau: eases up to a steady cruising speed, holds it, then speeds up near full push. Shape it with the sliders below.",
 ];
 function showCurve(){
   const c = settings && settings.curve >= 1 ? 1 : 0;
   document.querySelectorAll("#curveSeg button").forEach(b => b.classList.toggle("on", +b.dataset.curve === c));
   $("curveNote").textContent = CURVE_NOTES[c];
-  $("sPlat").disabled = c === 0;
+  ["sPlat","sRamp","sBoost","sCrisp"].forEach(id => $(id).disabled = c === 0);
 }
 document.querySelectorAll("#curveSeg button").forEach(b => b.addEventListener("click", () => {
   if(!settings) return;
@@ -504,7 +515,8 @@ function pushSettings(){
                ...f32(settings.trimUp), ...f32(settings.trimDown),
                ...f32(settings.trimLeft), ...f32(settings.trimRight),
                ...f32(settings.scroll), ...f32(settings.quiet),
-               ...f32(settings.curve), ...f32(settings.plateau)];
+               ...f32(settings.curve), ...f32(settings.plateau),
+               ...f32(settings.rampEnd), ...f32(settings.boostStart), ...f32(settings.crisp)];
     await cmd(C.SET_SET, p);
     try{ await expect(R.SETTINGS); }catch(e){}
     updateDiag();
@@ -567,7 +579,7 @@ rotation   XX ${n(c.XX)}  XY ${n(c.XY)}  YX ${n(c.YX)}  YY ${n(c.YY)}
 gains      up ${n(c.gUp)}  down ${n(c.gDown)}  left ${n(c.gLeft)}  right ${n(c.gRight)}
 magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
 
-curve ${s.curve >= 1 ? "plateau " + n(s.plateau,2) : "power"}
+curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  ramp ${n(s.rampEnd,2)}  boost ${n(s.boostStart,2)}  crisp ${n(s.crisp,1)}` : "power"}
 speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
 trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
 
@@ -594,10 +606,10 @@ $("defaults").onclick = async () => {
   await cmd(C.GET_SET);
   try{
     const s = await expect(R.SETTINGS);
-    const v = floats(s, 1, 10);
+    const v = floats(s, 1, 13);
     settings = { deadzone:v[0], speed:v[1], trimUp:v[2], trimDown:v[3],
                  trimLeft:v[4], trimRight:v[5], scroll:v[6], quiet:v[7],
-                 curve:v[8], plateau:v[9] || 0.25 };
+                 ...plateauFields(v) };
     fillSettings();
   }catch(e){}
 };

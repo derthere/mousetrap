@@ -41,9 +41,7 @@
 #define GATE_RAMP_MS     60     // cursor eases in over this long after the magnet gate opens
 // Plateau curve (TrackPoint-style, Selker & Rutledge): soft ramp, then a wide
 // band of steady speed for normal pushes, then a rise to top speed at full push.
-#define PLATEAU_START    0.25   // push fraction where the plateau begins
-#define PLATEAU_END      0.70   // ...and ends
-#define NEG_INERTIA      0.4    // plateau mode only: exaggerate speed changes so starts/stops feel crisp; 0 = off
+// Its shape (ramp end, boost start, crispness) is set from the web page.
 #define NEG_INERTIA_TAU  0.10   // seconds
 #define REBOUND_MS       120    // a direction reversal must sit in the deadzone this long first; 0 = off
 #define RECENTRE_RATE    0.002  // per loop, while hands-off: slowly re-zero drifting rest values
@@ -132,12 +130,15 @@ struct Settings {
   uint16_t buttonQuietMs;
   float curve;      // 0 = power curve, 1 = plateau curve
   float plateau;    // plateau speed as a fraction of top speed
+  float rampEnd;    // push fraction where the soft ramp reaches the plateau
+  float boostStart; // push fraction where speed starts rising above the plateau
+  float crisp;      // negative inertia: exaggerate speed changes; 0 = off
 };
 struct Store { uint16_t magic; Cal cal; Settings set; };
 
 const uint16_t STORE_MAGIC = 0xCA1E;
 const Cal      DEF_CAL = { -0.252, 0.571, 0.945, 0.270, 0.65, 2.1, 0.97, 1.03, 4.0, 3.0, 0, 0, 0 };
-const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25 };
+const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25, 0.35, 0.85, 0.0 };
 
 
 Cal cal = DEF_CAL;
@@ -149,16 +150,20 @@ bool calValid = false;
 void sanitizeSettings() {
   if (!(set.curve == 0 || set.curve == 1)) set.curve = 0;
   if (!(set.plateau >= 0.1f && set.plateau <= 0.8f)) set.plateau = DEF_SET.plateau;
+  if (!(set.rampEnd >= 0.05f && set.rampEnd <= 0.6f)) set.rampEnd = DEF_SET.rampEnd;
+  if (!(set.boostStart >= 0.4f && set.boostStart <= 0.98f)) set.boostStart = DEF_SET.boostStart;
+  if (set.boostStart < set.rampEnd + 0.05f) set.boostStart = set.rampEnd + 0.05f;
+  if (!(set.crisp >= 0 && set.crisp <= 1)) set.crisp = DEF_SET.crisp;
 }
 
 float smoothstep01(float x) { x = constrain(x, 0.0f, 1.0f); return x * x * (3 - 2 * x); }
 
 // Push fraction t (0 at deadzone edge, 1 at calibrated full push) -> fraction of top speed.
 float plateauCurve(float t) {
-  float P = set.plateau;
-  if (t < PLATEAU_START) return P * smoothstep01(t / PLATEAU_START);
-  if (t < PLATEAU_END)   return P;
-  if (t <= 1.0f)         return P + (1 - P) * smoothstep01((t - PLATEAU_END) / (1 - PLATEAU_END));
+  float P = set.plateau, a = set.rampEnd, b = set.boostStart;
+  if (t < a)     return P * smoothstep01(t / a);
+  if (t < b)     return P;
+  if (t <= 1.0f) return P + (1 - P) * smoothstep01((t - b) / (1 - b));
   return t;                                    // past full push: keep rising gently
 }
 
@@ -299,6 +304,7 @@ void sendSettings() {
   pf(b, i, set.trimLeft); pf(b, i, set.trimRight);
   pf(b, i, (float)set.scrollStep); pf(b, i, (float)set.buttonQuietMs);
   pf(b, i, set.curve); pf(b, i, set.plateau);
+  pf(b, i, set.rampEnd); pf(b, i, set.boostStart); pf(b, i, set.crisp);
   send(b);
 }
 
@@ -336,6 +342,7 @@ void handleCommand() {
       set.scrollStep = (int16_t)uf(c, i);
       set.buttonQuietMs = (uint16_t)uf(c, i);
       set.curve = uf(c, i);  set.plateau = uf(c, i);   // 0s from an older page
+      set.rampEnd = uf(c, i);  set.boostStart = uf(c, i);  set.crisp = uf(c, i);
       sanitizeSettings();
       sendSettings();
       break;
@@ -559,7 +566,7 @@ void loop() {
     // its recent average, so the cursor gets going (and stops) promptly.
     static float lagged = 0;
     lagged += (frac - lagged) * constrain(dt / NEG_INERTIA_TAU, 0.0f, 1.0f);
-    if (frac > 0) frac = constrain(frac + NEG_INERTIA * (frac - lagged), 0.0f, MAX_PUSH);
+    if (frac > 0) frac = constrain(frac + set.crisp * (frac - lagged), 0.0f, MAX_PUSH);
   } else {
     frac = pow(t, CURVE_EXP);
   }
