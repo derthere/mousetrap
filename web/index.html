@@ -7,18 +7,18 @@
 <style>
   :root{
     --bg:#f6f5f2; --panel:#fff; --ink:#1a1a1a; --dim:#6b6b6b; --line:#e2e0da;
-    --accent:#c2410c; --ok:#15803d; --warn:#b45309; --bad:#b91c1c;
+    --accent:#c2410c; --btn:#2563eb; --btn-hover:#1d4ed8; --ok:#15803d; --warn:#b45309; --bad:#b91c1c;
     --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   @media (prefers-color-scheme:dark){
     :root:not([data-theme="light"]){
       --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
-      --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+      --accent:#fb923c; --btn:#3b82f6; --btn-hover:#2563eb; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
     }
   }
   :root[data-theme="dark"]{
     --bg:#17171a; --panel:#1f1f23; --ink:#ececec; --dim:#9a9a9a; --line:#33333a;
-    --accent:#fb923c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    --accent:#fb923c; --btn:#3b82f6; --btn-hover:#2563eb; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
   }
   *{box-sizing:border-box}
   body{
@@ -35,11 +35,10 @@
   .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 16px;font-weight:600}
   button{
     font:inherit;font-weight:500;padding:9px 16px;border-radius:7px;cursor:pointer;
-    border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border:1px solid var(--btn);background:var(--btn);color:#fff;
   }
-  button:hover:not(:disabled){border-color:var(--accent)}
+  button:hover:not(:disabled){background:var(--btn-hover);border-color:var(--btn-hover)}
   button:disabled{opacity:.4;cursor:not-allowed}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--dim)}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
@@ -86,7 +85,9 @@
   .set label{font-size:14px}
   .seg{display:flex;gap:6px}
   .seg button{flex:1}
-  .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .seg button{background:transparent;color:var(--btn)}
+  .seg button:hover:not(:disabled){background:transparent;border-color:var(--btn-hover);color:var(--btn-hover)}
+  .seg button.on,.seg button.on:hover{background:var(--btn);border-color:var(--btn);color:#fff}
   .set output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--dim)}
   input[type=range]{width:100%;accent-color:var(--accent)}
   pre{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:12px;
@@ -202,10 +203,6 @@
     <div class="set"><label for="sSnap">Axis snap</label><input type="range" id="sSnap" min="0" max="25" step="1"><output id="oSnap"></output></div>
     <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
     <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
-    <div class="set"><label for="sTU">Trim up</label><input type="range" id="sTU" min="0.5" max="2" step="0.05"><output id="oTU"></output></div>
-    <div class="set"><label for="sTD">Trim down</label><input type="range" id="sTD" min="0.5" max="2" step="0.05"><output id="oTD"></output></div>
-    <div class="set"><label for="sTL">Trim left</label><input type="range" id="sTL" min="0.5" max="2" step="0.05"><output id="oTL"></output></div>
-    <div class="set"><label for="sTR">Trim right</label><input type="range" id="sTR" min="0.5" max="2" step="0.05"><output id="oTR"></output></div>
     <div class="row" style="margin-top:16px">
       <button id="save" class="primary">Save to device</button>
       <button id="defaults">Reset to defaults</button>
@@ -475,10 +472,6 @@ const SLIDERS = [
   ["sSnap","oSnap","axisSnap", v=>v.toFixed(0)+"°"],
   ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
   ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
-  ["sTU","oTU","trimUp", v=>v.toFixed(2)],
-  ["sTD","oTD","trimDown", v=>v.toFixed(2)],
-  ["sTL","oTL","trimLeft", v=>v.toFixed(2)],
-  ["sTR","oTR","trimRight", v=>v.toFixed(2)],
 ];
 function fillSettings(){
   SLIDERS.forEach(([s,o,key,fmt]) => {
@@ -515,8 +508,7 @@ function pushSettings(){
   clearTimeout(pushTimer);
   pushTimer = setTimeout(async () => {
     const p = [...f32(settings.deadzone), ...f32(settings.speed),
-               ...f32(settings.trimUp), ...f32(settings.trimDown),
-               ...f32(settings.trimLeft), ...f32(settings.trimRight),
+               ...f32(1), ...f32(1), ...f32(1), ...f32(1),   // trims retired: calibration gains handle balance
                ...f32(settings.scroll), ...f32(settings.quiet),
                ...f32(settings.curve), ...f32(settings.plateau),
                ...f32(settings.rampEnd), ...f32(settings.boostStart), ...f32(settings.crisp),
@@ -585,7 +577,6 @@ magnet     on ${n(c.magOn,2)}  off ${n(c.magOff,2)}
 
 curve ${s.curve >= 1 ? `plateau ${n(s.plateau,2)}  ramp ${n(s.rampEnd,2)}  boost ${n(s.boostStart,2)}  crisp ${n(s.crisp,1)}` : "power"}
 speed ${n(s.speed,0)}  deadzone ${n(s.deadzone,2)}  axis snap ${n(s.axisSnap,0)}°  scroll ${n(s.scroll,0)}  quiet ${n(s.quiet,0)}ms
-trims      up ${n(s.trimUp,2)}  down ${n(s.trimDown,2)}  left ${n(s.trimLeft,2)}  right ${n(s.trimRight,2)}
 
 live       ${last ? `dX ${n(last.dX,2)}  dY ${n(last.dY,2)}  mag ${n(last.mag,2)}  grip ${last.grip}` : "—"}
 accel raw  ${last ? `${n(last.aX,2)} ${n(last.aY,2)} ${n(last.aZ,2)}` : "—"}
