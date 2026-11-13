@@ -64,6 +64,8 @@ Direction indices are **0 = up, 1 = down, 2 = left, 3 = right**.
 deadzone, speed, trimUp, trimDown, trimLeft, trimRight, scrollStep, buttonQuietMs, curve, plateau, rampEnd, boostStart, crisp, axisSnap
 ```
 
+`scrollStep` is tenths of a line per knob click (10 = one line; 1–60). Firmware sends scroll one line per report.
+
 `curve` is 0 (power curve) or 1 (plateau curve). `plateau` is the plateau speed as a fraction of top speed, 0.1–0.8. `rampEnd` (0.05–0.6) is the push fraction where the ramp reaches the plateau, `boostStart` (0.4–0.98) where speed starts rising above it, and `crisp` (0–1) the negative-inertia gain. `axisSnap` (0–25, degrees) locks pushes this close to horizontal/vertical onto the axis; 0 = off. Firmware v2+; zeros or out-of-range values (e.g. from an older page) fall back to defaults.
 
 `scrollStep` and `buttonQuietMs` are integers sent as floats; the firmware truncates them.

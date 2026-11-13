@@ -218,7 +218,7 @@
     <div class="set"><label for="sPlat">Plateau speed</label><input type="range" id="sPlat" min="0.1" max="0.8" step="0.05"><output id="oPlat"></output></div>
     <div class="set"><label for="sBoost">Boost starts at</label><input type="range" id="sBoost" min="0.4" max="0.95" step="0.05"><output id="oBoost"></output></div>
     <div class="set"><label for="sDead">Deadzone</label><input type="range" id="sDead" min="0.1" max="0.8" step="0.05"><output id="oDead"></output></div>
-    <div class="set"><label for="sScroll">Scroll step</label><input type="range" id="sScroll" min="5" max="120" step="5"><output id="oScroll"></output></div>
+    <div class="set"><label for="sScroll">Scroll speed</label><input type="range" id="sScroll" min="1" max="40" step="1"><output id="oScroll"></output></div>
     <div class="set"><label for="sQuiet">Click pause</label><input type="range" id="sQuiet" min="0" max="400" step="25"><output id="oQuiet"></output></div>
     <div class="row" style="margin-top:16px">
       <button id="save" class="primary">Save to device</button>
@@ -693,7 +693,7 @@ const SLIDERS = [
   ["sPlat","oPlat","plateau", v=>Math.round(v*100)+"%"],
   ["sBoost","oBoost","boostStart", v=>Math.round(v*100)+"%"],
   ["sDead","oDead","deadzone", v=>v.toFixed(2)],
-  ["sScroll","oScroll","scroll", v=>v.toFixed(0)],
+  ["sScroll","oScroll","scroll", v=>(v/10).toFixed(1)+" lines/click"],
   ["sQuiet","oQuiet","quiet", v=>v.toFixed(0)+"ms"],
 ];
 function fillSettings(){

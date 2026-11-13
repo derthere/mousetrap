@@ -114,7 +114,7 @@ void mouseMove(int8_t x, int8_t y, int8_t wheel) {
 // scroll. Sending them separately meant whichever came second often found the
 // USB endpoint busy and was silently dropped.
 bool buttonsDirty = false;
-long pendingWheel = 0;            // scroll waiting to be sent
+long pendingWheel = 0;            // scroll lines waiting to be sent, one per report
 void mouseSetButton(uint8_t mask, bool down) {
   uint8_t before = mouseButtons;
   if (down) mouseButtons |= mask; else mouseButtons &= ~mask;
@@ -134,7 +134,7 @@ struct Cal {
 struct Settings {
   float deadzone, speed;
   float trimUp, trimDown, trimLeft, trimRight;
-  int16_t scrollStep;
+  int16_t scrollStep;   // tenths of a line per knob click (10 = 1 line)
   uint16_t buttonQuietMs;
   float curve;      // 0 = power curve, 1 = plateau curve
   float plateau;    // plateau speed as a fraction of top speed
@@ -147,7 +147,7 @@ struct Store { uint16_t magic; Cal cal; Settings set; };
 
 const uint16_t STORE_MAGIC = 0xCA1E;
 const Cal      DEF_CAL = { -0.252, 0.571, 0.945, 0.270, 0.65, 2.1, 0.97, 1.03, 4.0, 3.0, 0, 0, 0 };
-const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 50, 150, 0, 0.25, 0.35, 0.85, 0.0, 10.0 };
+const Settings DEF_SET = { 0.35, 25.0, 1.0, 1.0, 1.0, 1.0, 10, 150, 0, 0.25, 0.35, 0.85, 0.0, 10.0 };
 
 
 Cal cal = DEF_CAL;
@@ -164,6 +164,7 @@ void sanitizeSettings() {
   if (set.boostStart < set.rampEnd + 0.05f) set.boostStart = set.rampEnd + 0.05f;
   if (!(set.crisp >= 0 && set.crisp <= 1)) set.crisp = DEF_SET.crisp;
   if (!(set.axisSnap >= 0 && set.axisSnap <= 25)) set.axisSnap = DEF_SET.axisSnap;
+  if (set.scrollStep < 1 || set.scrollStep > 60) set.scrollStep = DEF_SET.scrollStep;
 }
 
 float smoothstep01(float x) { x = constrain(x, 0.0f, 1.0f); return x * x * (3 - 2 * x); }
@@ -682,7 +683,14 @@ void loop() {
       else if (d * 2 <= -CPD) clicks--;
       encEmitPos = pos;                         // bounce is absorbed here
     }
-    pendingWheel += clicks * CPD * set.scrollStep;   // same distance per click as before
+    // macOS reacts to how many scroll reports arrive, not their size, so scroll
+    // is sent as single lines. scrollStep is tenths of a line per click; the
+    // remainder carries over, so e.g. 5 = one line every second click.
+    static long scrollTenths = 0;
+    scrollTenths += clicks * set.scrollStep;
+    long lines = scrollTenths / 10;
+    scrollTenths -= lines * 10;
+    pendingWheel += lines;
 
     // ---- both buttons held = on-device calibration fallback ----
     static bool armed = false;
@@ -715,7 +723,7 @@ void loop() {
 
     // One report carries buttons, movement and scroll. If the endpoint is still
     // busy, nothing is lost: scroll and button changes wait for the next loop.
-    int w = constrain(pendingWheel, -127, 127);
+    int w = (pendingWheel > 0) - (pendingWheel < 0);   // one line per report
     if ((mx || my || w || buttonsDirty) && usb_mouse.ready()) {
       usb_mouse.mouseReport(RID_MOUSE, mouseButtons, mx, my, w, 0);
       accX -= mx;  accY -= my;  pendingWheel -= w;  buttonsDirty = false;
