@@ -145,10 +145,6 @@
       </div>
       <div>
         <div class="meter">
-          <label>Magnet <b id="magV">0.00</b></label>
-          <div class="bar"><i id="magB" style="left:0;width:0"></i><u id="magOnM"></u><u id="magOffM"></u></div>
-        </div>
-        <div class="meter">
           <label>Tilt X <b id="dxV">0.00</b></label>
           <div class="bar"><i id="dxB" style="left:50%;width:0"></i></div>
         </div>
@@ -320,7 +316,6 @@ async function connect(){
   calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3],
                   gUp:cv[4], gDown:cv[5], gLeft:cv[6], gRight:cv[7],
                   magOn:cv[8], magOff:cv[9] };
-  placeMagMarkers();
 
   $("app").classList.remove("hide");
   $("connect").classList.add("hide");
@@ -354,8 +349,6 @@ function renderState(dv){
   recent.push([performance.now(), st.dX, st.dY]);
   while(recent.length && performance.now() - recent[0][0] > 1500) recent.shift();
 
-  $("magV").textContent = st.mag.toFixed(2);
-  $("magB").style.width = Math.min(100, st.mag/20*100) + "%";
   bar("dx", st.dX); bar("dy", st.dY);
   $("dxV").textContent = st.dX.toFixed(2);
   $("dyV").textContent = st.dY.toFixed(2);
@@ -375,11 +368,6 @@ function bar(id, val, scale = 4){
   const el = $(id+"B");
   if(pct >= 0){ el.style.left = "50%"; el.style.width = pct + "%"; }
   else { el.style.left = (50+pct) + "%"; el.style.width = (-pct) + "%"; }
-}
-function placeMagMarkers(){
-  if(!calInfo?.cal) return;
-  $("magOnM").style.left = Math.min(100, calInfo.cal.magOn/20*100) + "%";
-  $("magOffM").style.left = Math.min(100, calInfo.cal.magOff/20*100) + "%";
 }
 function sizeDeadzone(){
   const d = settings ? settings.deadzone : 0.35;
@@ -526,7 +514,7 @@ async function calCompute(){
       calInfo.cal = { XX:cv[0], XY:cv[1], YX:cv[2], YY:cv[3], gUp:cv[4], gDown:cv[5],
                       gLeft:cv[6], gRight:cv[7], magOn:cv[8], magOff:cv[9] };
       calInfo.valid = true;
-      placeMagMarkers(); updateDiag();
+      updateDiag();
     }
   }catch(err){ showCal(false, err.message); cueBad(); }
   resetCalUI();
